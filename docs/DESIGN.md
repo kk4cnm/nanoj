@@ -95,7 +95,15 @@ far easier to test exhaustively than parser conformance.
   It is a second *rendering* of the same tree: cell edits go through the same
   mutation primitives and undo history as the tree view, and structural changes
   are deferred to the tree view to keep the grid focused on fast value entry.
-  Still to come in this phase: a config/env mechanism for user defaults (e.g.
-  default view, indent size) and column scrolling polish.
+  Configuration is implemented: an optional JSON config file (`internal/config`)
+  sets the default view, indent, and theme, with per-element style overrides.
+  Theming is built for accessibility — a colorblind-safe (Okabe–Ito) palette, a
+  high-contrast palette, and a monochrome palette that distinguishes element
+  types by text attributes alone, plus support for the standard `NO_COLOR`
+  environment variable. The config package is deliberately UI-free (pure data);
+  the ui package's `BuildTheme` turns that data into lipgloss styles, so colors
+  stay fully customizable without coupling config to the terminal layer.
+
+  Still to come in this phase: column-scrolling polish for very wide tables.
 - **Later:** undo/redo, search and replace, virtualized rendering for very
   large files, optional JSON5/JSONC support.

@@ -207,14 +207,12 @@ func (m Model) renderTable() string {
 	idxW := m.indexWidth()
 	start, end := visibleColumns(widths, idxW, m.width, m.tableColOff)
 
-	headStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("4"))
-
 	// Header.
 	var head strings.Builder
 	head.WriteString(strings.Repeat(" ", idxW))
 	for c := start; c < end; c++ {
 		head.WriteString(tableColSep)
-		head.WriteString(headStyle.Render(fit(m.table.columns[c], widths[c])))
+		head.WriteString(m.theme.Header.Render(fit(m.table.columns[c], widths[c])))
 	}
 	b.WriteString(pad(head.String(), m.width))
 	b.WriteByte('\n')
@@ -224,7 +222,7 @@ func (m Model) renderTable() string {
 	if sepWidth > m.width {
 		sepWidth = m.width
 	}
-	b.WriteString(styleStructure.Render(strings.Repeat("─", sepWidth)))
+	b.WriteString(m.theme.Structure.Render(strings.Repeat("─", sepWidth)))
 	b.WriteByte('\n')
 
 	// Data rows.
@@ -236,12 +234,12 @@ func (m Model) renderTable() string {
 	shown := 0
 	for r := m.tableRowOff; r < endRow; r++ {
 		var line strings.Builder
-		line.WriteString(styleStructure.Render(fit(strconv.Itoa(r), idxW)))
+		line.WriteString(m.theme.Structure.Render(fit(strconv.Itoa(r), idxW)))
 		for c := start; c < end; c++ {
-			line.WriteString(styleStructure.Render(tableColSep))
+			line.WriteString(m.theme.Structure.Render(tableColSep))
 			cell := fit(cellText(m.table.cellNode(r, c)), widths[c])
 			if r == m.tableRow && c == m.tableCol {
-				cell = styleSelected.Render(cell)
+				cell = m.theme.Selection.Render(cell)
 			}
 			line.WriteString(cell)
 		}

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kk4cnm/nanoj/internal/config"
 	"github.com/kk4cnm/nanoj/internal/document"
 )
 
@@ -89,6 +90,9 @@ type Model struct {
 
 	editTarget *document.Node // node being edited by the value prompt
 
+	theme  Theme  // resolved display styles (from config)
+	indent string // per-level indent unit used when saving
+
 	// Prompt state (used in modeInput / modeChoice).
 	mode        mode
 	action      action
@@ -99,8 +103,15 @@ type Model struct {
 	pendingNode *document.Node // container being added to (actAddKey)
 }
 
-// New builds a Model for the given parsed document and file path.
+// New builds a Model with default configuration. It is a convenience used by
+// tests; the program uses NewWithConfig.
 func New(root *document.Node, path string) Model {
+	return NewWithConfig(root, path, config.Default())
+}
+
+// NewWithConfig builds a Model for the given document, file path, and user
+// configuration (theme, indent, default view).
+func NewWithConfig(root *document.Node, path string, cfg config.Config) Model {
 	ti := textinput.New()
 	ti.Prompt = "" // we render our own label before the field
 	m := Model{
@@ -108,13 +119,18 @@ func New(root *document.Node, path string) Model {
 		path:      path,
 		collapsed: map[string]bool{},
 		input:     ti,
+		theme:     BuildTheme(cfg),
+		indent:    cfg.Indent,
 	}
 	m.rebuild()
-	// Auto-detect: if the whole document is an array of objects, open straight
-	// into the table view, which is the more natural way to read tabular data.
-	if shape, ok := tabularShape(root); ok {
-		m.view = viewTable
-		m.table = shape
+
+	// Choose the initial view per config. "table" and "auto" both open the
+	// table when the document is an array of objects; "auto" is the default.
+	if cfg.DefaultView != "tree" {
+		if shape, ok := tabularShape(root); ok {
+			m.view = viewTable
+			m.table = shape
+		}
 	}
 	return m
 }
@@ -393,7 +409,7 @@ func (m Model) View() string {
 	shown := 0
 	for i := m.offset; i < end; i++ {
 		r := m.rows[i]
-		b.WriteString(renderRow(r, m.isExpanded(r.Path), i == m.cursor))
+		b.WriteString(renderRow(m.theme, r, m.isExpanded(r.Path), i == m.cursor))
 		b.WriteByte('\n')
 		shown++
 	}

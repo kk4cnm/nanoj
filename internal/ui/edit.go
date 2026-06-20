@@ -251,7 +251,7 @@ func (m *Model) handleChoice(key string) tea.Cmd {
 // save serializes the tree and writes it to path. Output is valid by
 // construction, so a successful write is always well-formed JSON.
 func (m *Model) save(path string) error {
-	out, err := m.root.Marshal("  ")
+	out, err := m.root.Marshal(m.indent)
 	if err != nil {
 		return err
 	}

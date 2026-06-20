@@ -52,6 +52,56 @@ any such array in the tree view. Arrow keys move between cells and `Enter`
 edits a scalar cell; structural changes (adding keys, changing types) are done
 in the tree view. `^T` or `Esc` returns to the tree.
 
+## Configuration
+
+nanoj reads an optional JSON config file (so you can edit it in nanoj itself).
+Write a starter file to the default location with:
+
+```sh
+nanoj --write-config
+```
+
+The file is looked up at `--config <path>`, then `$NANOJ_CONFIG`, then your
+per-OS config dir (e.g. `~/.config/nanoj/config.json` on Linux,
+`~/Library/Application Support/nanoj/config.json` on macOS).
+
+Options:
+
+| Field | Values | Meaning |
+| --- | --- | --- |
+| `defaultView` | `auto` (default), `tree`, `table` | which view to open in (`auto` = table for arrays of objects) |
+| `indent` | a string, e.g. `"  "` or `"\t"` | indentation used when saving |
+| `theme` | `default`, `colorblind`, `high-contrast`, `mono` | base color/attribute palette |
+| `styles` | per-element overrides | fine-tune individual elements |
+
+### Accessibility
+
+Theming is built around accessibility, not just looks:
+
+- **`colorblind`** — an Okabe–Ito-based palette chosen to stay distinguishable
+  across common forms of color blindness, and it reinforces type differences
+  with **bold**/*italic* so meaning never depends on hue alone.
+- **`high-contrast`** — bright, bold colors for low-vision use.
+- **`mono`** — no color at all; element types are told apart purely by bold,
+  italic, underline, and faint.
+- The standard **`NO_COLOR`** environment variable (and `NANOJ_NO_COLOR`) is
+  honored — when set, nanoj drops all color and falls back to attribute-only
+  styling.
+
+Each element (`key`, `string`, `number`, `bool`, `null`, `structure`, `header`,
+`selection`) can be individually overridden with `fg`, `bg`, `bold`, `italic`,
+`underline`, `faint`, and `reverse`:
+
+```json
+{
+  "theme": "colorblind",
+  "styles": {
+    "string": { "fg": "#3cb371", "italic": true },
+    "key":    { "fg": "12", "bold": true }
+  }
+}
+```
+
 ## Design
 
 nanoj is written in Go for single static binaries across macOS, Windows,
