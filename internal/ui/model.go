@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kk4cnm/nanoj/internal/config"
 	"github.com/kk4cnm/nanoj/internal/document"
 )
@@ -442,7 +443,7 @@ func (m Model) titleBar() string {
 	if gap < 0 {
 		gap = 0
 	}
-	return bar.Render(title + strings.Repeat(" ", gap) + pos)
+	return bar.Render(pad(title+strings.Repeat(" ", gap)+pos, m.width))
 }
 
 // statusBar renders the two bottom lines: a prompt when one is active,
@@ -474,10 +475,31 @@ func (m Model) statusBar() string {
 	}
 }
 
-// pad right-pads s with spaces to width w (used to fill status lines).
-func pad(s string, w int) string {
-	if lipgloss.Width(s) >= w {
-		return s
+// padBetween lays out left and right on a single line of width w, with right
+// kept flush to the right edge. When there isn't room for both, the left text
+// is truncated first so the (more important) right text stays visible.
+func padBetween(left, right string, w int) string {
+	lw, rw := lipgloss.Width(left), lipgloss.Width(right)
+	if gap := w - lw - rw; gap >= 1 {
+		return left + strings.Repeat(" ", gap) + right
 	}
-	return s + strings.Repeat(" ", w-lipgloss.Width(s))
+	avail := w - rw - 1
+	if avail < 1 {
+		return pad(right, w)
+	}
+	return ansi.Truncate(left, avail, "") + " " + right
+}
+
+// pad makes s exactly w display columns wide: right-padding with spaces when
+// short, and truncating (ANSI-aware) when long so a line never wraps.
+func pad(s string, w int) string {
+	width := lipgloss.Width(s)
+	switch {
+	case width == w:
+		return s
+	case width < w:
+		return s + strings.Repeat(" ", w-width)
+	default:
+		return ansi.Truncate(s, w, "")
+	}
 }

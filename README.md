@@ -52,6 +52,11 @@ any such array in the tree view. Arrow keys move between cells and `Enter`
 edits a scalar cell; structural changes (adding keys, changing types) are done
 in the tree view. `^T` or `Esc` returns to the tree.
 
+Wide tables scroll horizontally as you move: the row-number column stays fixed,
+and `‹`/`›` markers in the status bar show when more columns lie off-screen.
+`^A`/`^E` jump to the first/last column, `Home`/`End` to the first/last row, and
+`PgUp`/`PgDn` page through rows.
+
 ## Configuration
 
 nanoj reads an optional JSON config file (so you can edit it in nanoj itself).

@@ -104,6 +104,9 @@ far easier to test exhaustively than parser conformance.
   the ui package's `BuildTheme` turns that data into lipgloss styles, so colors
   stay fully customizable without coupling config to the terminal layer.
 
-  Still to come in this phase: column-scrolling polish for very wide tables.
+  Wide tables scroll horizontally with a frozen row-number column and
+  off-screen-column indicators; all lines are clipped (ANSI-aware) to the
+  terminal width so nothing wraps. Still to come in this phase: virtualized
+  rendering for very large files.
 - **Later:** undo/redo, search and replace, virtualized rendering for very
   large files, optional JSON5/JSONC support.

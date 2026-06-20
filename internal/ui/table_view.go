@@ -8,8 +8,19 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kk4cnm/nanoj/internal/document"
 )
+
+// clip truncates a (possibly styled) line to width display columns, preserving
+// ANSI styling. It guards against wrapping when a single column is wider than
+// the screen — visibleColumns already prevents overflow in the normal case.
+func clip(s string, width int) string {
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width, "")
+}
 
 // enterTable switches to the table view for the tabular array at or containing
 // the selection. Structural edits (add/delete/retype) stay in the tree view,
@@ -87,6 +98,16 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "end":
 		p.tableRow = len(p.table.array.Items) - 1
 		p.clampTableScroll()
+	case "ctrl+a":
+		p.tableCol = 0
+		p.clampTableScroll()
+	case "ctrl+e":
+		p.tableCol = len(p.table.columns) - 1
+		p.clampTableScroll()
+	case "pgup":
+		p.moveTableCursor(-p.tableBodyHeight(), 0)
+	case "pgdown":
+		p.moveTableCursor(p.tableBodyHeight(), 0)
 	}
 	return m, nil
 }
@@ -214,7 +235,7 @@ func (m Model) renderTable() string {
 		head.WriteString(tableColSep)
 		head.WriteString(m.theme.Header.Render(fit(m.table.columns[c], widths[c])))
 	}
-	b.WriteString(pad(head.String(), m.width))
+	b.WriteString(clip(pad(head.String(), m.width), m.width))
 	b.WriteByte('\n')
 
 	// Separator.
@@ -243,7 +264,7 @@ func (m Model) renderTable() string {
 			}
 			line.WriteString(cell)
 		}
-		b.WriteString(line.String())
+		b.WriteString(clip(line.String(), m.width))
 		b.WriteByte('\n')
 		shown++
 	}
@@ -265,10 +286,27 @@ func (m Model) tableStatusBar() string {
 	}
 	if m.status != "" {
 		line1 := lipgloss.NewStyle().Reverse(true).Render(pad(" "+m.status, m.width))
-		line2 := pad(fmt.Sprintf(" TABLE  row %d/%d", m.tableRow+1, len(m.table.array.Items)), m.width)
-		return line1 + "\n" + line2
+		return line1 + "\n" + pad(" "+m.tablePosition(), m.width)
 	}
 	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "^O Write", "^X Exit"}, "    "), m.width)
-	line2 := pad(" "+strings.Join([]string{"↑↓←→ Move", "M-U Undo", fmt.Sprintf("TABLE  row %d/%d", m.tableRow+1, len(m.table.array.Items))}, "    "), m.width)
+	help := " " + strings.Join([]string{"↑↓←→ Move", "^A/^E Col ends"}, "    ")
+	line2 := padBetween(help, m.tablePosition()+" ", m.width)
 	return line1 + "\n" + line2
+}
+
+// tablePosition summarizes the cursor location and signals when columns are
+// scrolled off-screen with ‹ (more to the left) and › (more to the right).
+func (m Model) tablePosition() string {
+	widths := m.table.columnWidths()
+	start, end := visibleColumns(widths, m.indexWidth(), m.width, m.tableColOff)
+	left, right := " ", " "
+	if start > 0 {
+		left = "‹"
+	}
+	if end < len(m.table.columns) {
+		right = "›"
+	}
+	return fmt.Sprintf("TABLE  row %d/%d  %scol %d/%d%s",
+		m.tableRow+1, len(m.table.array.Items),
+		left, m.tableCol+1, len(m.table.columns), right)
 }

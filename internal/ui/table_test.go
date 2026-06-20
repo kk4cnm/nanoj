@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestTabularShapeDetection(t *testing.T) {
@@ -117,6 +119,90 @@ func TestEnterTableFromNestedArray(t *testing.T) {
 	}
 	if len(m.table.columns) != 1 || m.table.columns[0] != "a" {
 		t.Errorf("unexpected columns: %v", m.table.columns)
+	}
+}
+
+// wideDoc builds an array of rows each with cols columns, values "r{r}c{c}".
+func wideDoc(t *testing.T, rows, cols int) string {
+	t.Helper()
+	var b strings.Builder
+	b.WriteByte('[')
+	for r := 0; r < rows; r++ {
+		if r > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('{')
+		for c := 0; c < cols; c++ {
+			if c > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, `"col%d":"r%dc%d"`, c, r, c)
+		}
+		b.WriteByte('}')
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+func TestTableHorizontalScroll(t *testing.T) {
+	m := New(parse(t, wideDoc(t, 3, 8)), "w.json")
+	m = sized(m, 40, 12) // narrow: only a few columns fit
+	if m.tableColOff != 0 {
+		t.Fatalf("should start unscrolled, got colOff %d", m.tableColOff)
+	}
+	for i := 0; i < 7; i++ {
+		m = sendKey(m, "right")
+	}
+	if m.tableCol != 7 {
+		t.Fatalf("expected to reach last column, got %d", m.tableCol)
+	}
+	if m.tableColOff == 0 {
+		t.Errorf("reaching the last column should have scrolled columns (colOff>0)")
+	}
+	// Scrolling back left should bring the offset home.
+	for i := 0; i < 7; i++ {
+		m = sendKey(m, "left")
+	}
+	if m.tableColOff != 0 {
+		t.Errorf("returning to column 0 should reset colOff, got %d", m.tableColOff)
+	}
+}
+
+func TestTableColumnEndKeys(t *testing.T) {
+	m := New(parse(t, wideDoc(t, 2, 8)), "w.json")
+	m = sized(m, 40, 12)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = updated.(Model)
+	if m.tableCol != 7 {
+		t.Errorf("^E should jump to last column, got %d", m.tableCol)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	m = updated.(Model)
+	if m.tableCol != 0 || m.tableColOff != 0 {
+		t.Errorf("^A should jump to first column and unscroll, got col %d off %d", m.tableCol, m.tableColOff)
+	}
+}
+
+func TestTableLinesNeverWrap(t *testing.T) {
+	// A single column far wider than the screen must still not overflow.
+	m := New(parse(t, `[{"big":"`+strings.Repeat("x", 200)+`"}]`), "w.json")
+	m = sized(m, 30, 10)
+	for _, line := range strings.Split(m.View(), "\n") {
+		if w := lipgloss.Width(line); w > 30 {
+			t.Errorf("line exceeds width 30 (got %d): %q", w, line)
+		}
+	}
+}
+
+func TestTablePositionIndicator(t *testing.T) {
+	m := New(parse(t, wideDoc(t, 2, 8)), "w.json")
+	m = sized(m, 40, 12)
+	out := m.View()
+	if !strings.Contains(out, "col 1/8") {
+		t.Errorf("expected column position 'col 1/8' in view:\n%s", out)
+	}
+	if !strings.Contains(out, "›") {
+		t.Errorf("expected a › indicator showing more columns to the right:\n%s", out)
 	}
 }
 
