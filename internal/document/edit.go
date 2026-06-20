@@ -162,6 +162,42 @@ func (n *Node) AppendItem(value *Node) error {
 	return nil
 }
 
+// InsertItem inserts value into an array at position i (clamped to a valid
+// range). It is used by paste.
+func (n *Node) InsertItem(i int, value *Node) error {
+	if n.Kind != KindArray {
+		return fmt.Errorf("cannot insert into a %s", n.Kind)
+	}
+	if i < 0 {
+		i = 0
+	}
+	if i > len(n.Items) {
+		i = len(n.Items)
+	}
+	n.Items = append(n.Items, nil)
+	copy(n.Items[i+1:], n.Items[i:])
+	n.Items[i] = value
+	return nil
+}
+
+// InsertMember inserts a key/value pair into an object at position i (clamped to
+// a valid range). It is used by paste.
+func (n *Node) InsertMember(i int, key string, value *Node) error {
+	if n.Kind != KindObject {
+		return fmt.Errorf("cannot insert into a %s", n.Kind)
+	}
+	if i < 0 {
+		i = 0
+	}
+	if i > len(n.Members) {
+		i = len(n.Members)
+	}
+	n.Members = append(n.Members, Member{})
+	copy(n.Members[i+1:], n.Members[i:])
+	n.Members[i] = Member{Key: key, Value: value}
+	return nil
+}
+
 // RemoveChild removes the child at position i from a container. For objects i
 // indexes Members; for arrays it indexes Items.
 func (n *Node) RemoveChild(i int) error {

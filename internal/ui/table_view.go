@@ -86,6 +86,12 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+w":
 		p.beginSearch()
 		return m, textinput.Blink
+	case "ctrl+k":
+		p.cutRow()
+	case "alt+6":
+		p.copyRow()
+	case "ctrl+u":
+		p.pasteRow()
 	case "up", "ctrl+p", "k":
 		p.moveTableCursor(-1, 0)
 	case "down", "ctrl+n", "j":
@@ -313,7 +319,7 @@ func (m Model) tableStatusBar() string {
 		return line1 + "\n" + pad(" "+m.tablePosition(), m.width)
 	}
 	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "^W Search", "^O Write", "^X Exit"}, "    "), m.width)
-	help := " " + strings.Join([]string{"↑↓←→ Move", "^A/^E Col ends"}, "    ")
+	help := " " + strings.Join([]string{"↑↓←→ Move", "^K Cut", "M-6 Copy", "^U Paste row"}, "    ")
 	line2 := padBetween(help, m.tablePosition()+" ", m.width)
 	return line1 + "\n" + line2
 }

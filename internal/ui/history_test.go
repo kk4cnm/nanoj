@@ -46,9 +46,8 @@ func TestUndoDelete(t *testing.T) {
 	m = sendKey(m, "down") // onto "a"
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
 	m = updated.(Model)
-	m = typeText(m, "y") // confirm delete
 	if m.root.ChildCount() != 1 {
-		t.Fatalf("setup: expected 1 child after delete, got %d", m.root.ChildCount())
+		t.Fatalf("setup: expected 1 child after cut, got %d", m.root.ChildCount())
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u"), Alt: true})
 	m = updated.(Model)

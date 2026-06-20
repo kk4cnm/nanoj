@@ -37,7 +37,7 @@ Keys (nano-style; `^X` means Ctrl-X):
 | `Enter` | edit a value, toggle a bool, or expand/collapse a container |
 | `t` | change a value's type |
 | `a` | add a key (object) or element (array) |
-| `^K` | delete the selected node (with confirmation) |
+| `^K` / `M-6` / `^U` | cut / copy / paste a node (recoverable via paste or undo) |
 | `^W` | search keys and values (reveals matches in collapsed branches) |
 | `^T` | toggle the table view for an array of objects |
 | `M-U` / `M-E` | undo / redo (also `^Z` / `^Y`) |
@@ -58,7 +58,8 @@ Wide tables scroll horizontally as you move: the row-number column stays fixed,
 and `‹`/`›` markers in the status bar show when more columns lie off-screen.
 `^A`/`^E` jump to the first/last column, `Home`/`End` to the first/last row, and
 `PgUp`/`PgDn` page through rows. `^W` searches cell values and jumps to the next
-match (scrolling it into view).
+match (scrolling it into view). `^K`/`M-6`/`^U` cut/copy/paste whole rows —
+handy for duplicating a row (copy then paste).
 
 ## Configuration
 

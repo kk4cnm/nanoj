@@ -133,19 +133,25 @@ func TestAddObjectKey(t *testing.T) {
 	}
 }
 
-// TestDeleteNode confirms a yes/no delete removes the selected node.
-func TestDeleteNode(t *testing.T) {
+// TestCutNode confirms ^K removes the selected node immediately (no
+// confirmation) and places it on the clipboard.
+func TestCutNode(t *testing.T) {
 	m := New(parse(t, `{"a": 1, "b": 2}`), "x.json")
 	m = sized(m, 80, 24)
 	m = sendKey(m, "down") // onto "a"
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
 	m = updated.(Model)
-	if m.mode != modeChoice {
-		t.Fatalf("expected delete confirmation, got mode %d", m.mode)
+	if m.mode != modeNormal {
+		t.Fatalf("cut should not open a prompt, got mode %d", m.mode)
 	}
-	m = typeText(m, "y")
 	if m.root.ChildCount() != 1 || m.root.Members[0].Key != "b" {
 		t.Errorf("expected only \"b\" to remain, got %+v", m.root.Members)
+	}
+	if m.clipboard == nil || m.clipboard.Num.String() != "1" {
+		t.Errorf("cut node should be on the clipboard, got %v", m.clipboard)
+	}
+	if !m.clipboardHasKey || m.clipboardKey != "a" {
+		t.Errorf("clipboard should remember key \"a\", got hasKey=%v key=%q", m.clipboardHasKey, m.clipboardKey)
 	}
 }
 

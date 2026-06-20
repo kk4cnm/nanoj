@@ -109,18 +109,6 @@ func (m *Model) beginAddNode() {
 	}
 }
 
-// beginDelete asks for confirmation before removing the selected node.
-func (m *Model) beginDelete() {
-	if len(m.rows) == 0 {
-		return
-	}
-	if m.rows[m.cursor].Parent == nil {
-		m.status = "cannot delete the root node"
-		return
-	}
-	m.beginChoice(actConfirmDelete, "Delete this node?", "Y Yes   N No")
-}
-
 // beginSave opens the "write out" prompt prefilled with the current path.
 func (m *Model) beginSave() {
 	m.beginInput(actSaveAs, "File Name to Write: ", m.path)
@@ -239,20 +227,6 @@ func (m *Model) handleChoice(key string) tea.Cmd {
 		m.dirty = true
 		m.endPrompt()
 		m.rebuild()
-
-	case actConfirmDelete:
-		switch key {
-		case "y", "Y":
-			row := m.rows[m.cursor]
-			m.pushUndo()
-			_ = row.Parent.RemoveChild(row.Index)
-			m.dirty = true
-			m.endPrompt()
-			m.rebuild()
-			m.clampScroll()
-		case "n", "N":
-			m.endPrompt()
-		}
 
 	case actConfirmQuit:
 		switch key {

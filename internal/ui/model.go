@@ -43,7 +43,6 @@ const (
 	actSaveAs
 	actSearch
 	actTypePick
-	actConfirmDelete
 	actConfirmQuit
 )
 
@@ -82,6 +81,12 @@ type Model struct {
 	undoStack  []snapshot
 	redoStack  []snapshot
 	lastSearch string
+
+	// Clipboard for cut/copy/paste. The node is a detached clone; key/hasKey
+	// remember the original object key so pasting into an object can reuse it.
+	clipboard       *document.Node
+	clipboardKey    string
+	clipboardHasKey bool
 
 	// Table view state (used when view == viewTable).
 	view           viewMode
@@ -254,7 +259,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 	case "ctrl+k":
-		p.beginDelete()
+		p.cutCurrent()
+	case "alt+6":
+		p.copyCurrent()
+	case "ctrl+u":
+		p.pasteCurrent()
 	case "ctrl+w":
 		p.beginSearch()
 		return m, textinput.Blink
@@ -503,7 +512,7 @@ func (m Model) statusBar() string {
 		} else {
 			line1 = pad(" "+strings.Join([]string{"^X Exit", "^O Write", "^W Search", "Enter Edit", "t Type"}, "    "), m.width)
 		}
-		line2 := pad(" "+strings.Join([]string{"a Add", "^K Delete", "M-U Undo", "^T Table", "→/← Expand/Collapse"}, "    "), m.width)
+		line2 := pad(" "+strings.Join([]string{"a Add", "^K Cut", "M-6 Copy", "^U Paste", "M-U Undo", "^T Table"}, "    "), m.width)
 		return line1 + "\n" + line2
 	}
 }
