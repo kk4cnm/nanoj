@@ -45,13 +45,21 @@ func (m *Model) enterTable() {
 	m.tableCol = 0
 	m.tableColOff = 0
 	m.tableRowOff = 0
+	m.recomputeColWidths()
 	m.clampTableScroll()
+}
+
+// recomputeColWidths refreshes the cached column widths. It is called only when
+// the table's content changes (entering the table, an edit, an undo) — never on
+// plain navigation, so moving the cursor stays O(viewport) on huge tables.
+func (m *Model) recomputeColWidths() {
+	m.tableColWidths = m.table.columnWidths()
 }
 
 // exitTable returns to the tree view, leaving the cursor on the array.
 func (m *Model) exitTable() {
 	m.view = viewTree
-	m.rebuild()
+	m.ensureRows()
 	for i, r := range m.rows {
 		if r.Node == m.table.array {
 			m.cursor = i
@@ -148,6 +156,7 @@ func (m *Model) editCell() {
 		m.pushUndo()
 		n.Bool = !n.Bool
 		m.dirty = true
+		m.recomputeColWidths()
 		return
 	}
 	if n.Kind == document.KindNull {
@@ -163,6 +172,7 @@ func (m *Model) editCell() {
 func (m *Model) refreshTableShape() {
 	if shape, ok := tabularShape(m.table.array); ok {
 		m.table = shape
+		m.recomputeColWidths()
 		m.clampTableScroll()
 		return
 	}
@@ -182,19 +192,21 @@ func (m *Model) clampTableScroll() {
 		m.tableRowOff = 0
 	}
 
-	widths := m.table.columnWidths()
+	widths := m.tableColWidths
 	idxW := m.indexWidth()
-	for {
-		start, end := visibleColumns(widths, idxW, m.width, m.tableColOff)
-		if m.tableCol < start {
-			m.tableColOff = m.tableCol
-			continue
+	// Scroll left if the cursor is left of the window.
+	if m.tableColOff > m.tableCol {
+		m.tableColOff = m.tableCol
+	}
+	// Scroll right until the cursor is visible. This terminates because colOff
+	// only advances toward tableCol, and once colOff == tableCol the cursor is
+	// always within the window (visibleColumns shows at least one column).
+	for m.tableColOff < m.tableCol {
+		_, end := visibleColumns(widths, idxW, m.width, m.tableColOff)
+		if m.tableCol < end {
+			break
 		}
-		if m.tableCol >= end {
-			m.tableColOff++
-			continue
-		}
-		break
+		m.tableColOff++
 	}
 }
 
@@ -224,7 +236,7 @@ func (m Model) renderTable() string {
 	b.WriteString(m.titleBar())
 	b.WriteByte('\n')
 
-	widths := m.table.columnWidths()
+	widths := m.tableColWidths
 	idxW := m.indexWidth()
 	start, end := visibleColumns(widths, idxW, m.width, m.tableColOff)
 
@@ -297,7 +309,7 @@ func (m Model) tableStatusBar() string {
 // tablePosition summarizes the cursor location and signals when columns are
 // scrolled off-screen with ‹ (more to the left) and › (more to the right).
 func (m Model) tablePosition() string {
-	widths := m.table.columnWidths()
+	widths := m.tableColWidths
 	start, end := visibleColumns(widths, m.indexWidth(), m.width, m.tableColOff)
 	left, right := " ", " "
 	if start > 0 {

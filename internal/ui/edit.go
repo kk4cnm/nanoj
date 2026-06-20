@@ -159,6 +159,9 @@ func (m *Model) commitInput() tea.Cmd {
 		m.dirty = true
 		m.endPrompt()
 		m.rebuild()
+		if m.view == viewTable {
+			m.recomputeColWidths()
+		}
 
 	case actAddKey:
 		key := val

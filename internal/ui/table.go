@@ -16,6 +16,7 @@ import (
 const (
 	tableMaxColWidth = 30 // cap a column's width so one long value can't dominate
 	tableColSep      = " │ "
+	widthSampleRows  = 500 // rows sampled when sizing columns (bounds cost on huge tables)
 )
 
 // tableShape describes an array that can be shown as a table.
@@ -80,12 +81,19 @@ func cellText(n *document.Node) string {
 }
 
 // columnWidths computes the display width of each column (header vs. cells),
-// capped at tableMaxColWidth.
+// capped at tableMaxColWidth. To keep this affordable on very large tables, at
+// most widthSampleRows rows are sampled — a value wider than the sample beyond
+// that point is simply truncated with an ellipsis, which is already how
+// over-long cells are shown anyway.
 func (s tableShape) columnWidths() []int {
+	rows := len(s.array.Items)
+	if rows > widthSampleRows {
+		rows = widthSampleRows
+	}
 	widths := make([]int, len(s.columns))
 	for c, key := range s.columns {
 		w := lipgloss.Width(key)
-		for r := range s.array.Items {
+		for r := 0; r < rows; r++ {
 			if cw := lipgloss.Width(cellText(s.cellNode(r, c))); cw > w {
 				w = cw
 			}

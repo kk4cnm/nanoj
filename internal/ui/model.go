@@ -66,9 +66,10 @@ type Model struct {
 	path      string          // file path, shown in the title bar and used by save
 	collapsed map[string]bool // structural paths that are collapsed (default: expanded)
 
-	rows   []Row
-	cursor int
-	offset int
+	rows      []Row
+	rowsStale bool // tree rows need rebuilding (deferred while in table view)
+	cursor    int
+	offset    int
 
 	width  int
 	height int
@@ -82,12 +83,13 @@ type Model struct {
 	lastSearch string
 
 	// Table view state (used when view == viewTable).
-	view        viewMode
-	table       tableShape
-	tableRow    int
-	tableCol    int
-	tableRowOff int
-	tableColOff int
+	view           viewMode
+	table          tableShape
+	tableColWidths []int // cached column widths; recomputed only when the table changes
+	tableRow       int
+	tableCol       int
+	tableRowOff    int
+	tableColOff    int
 
 	editTarget *document.Node // node being edited by the value prompt
 
@@ -123,28 +125,55 @@ func NewWithConfig(root *document.Node, path string, cfg config.Config) Model {
 		theme:     BuildTheme(cfg),
 		indent:    cfg.Indent,
 	}
-	m.rebuild()
 
-	// Choose the initial view per config. "table" and "auto" both open the
-	// table when the document is an array of objects; "auto" is the default.
+	// Choose the initial view per config *before* the first rebuild. "table"
+	// and "auto" both open the table when the document is an array of objects;
+	// "auto" is the default.
 	if cfg.DefaultView != "tree" {
 		if shape, ok := tabularShape(root); ok {
 			m.view = viewTable
 			m.table = shape
+			m.recomputeColWidths()
 		}
 	}
+
+	// rebuild is lazy in table view, so opening a large array of records (the
+	// common big-file case) skips flattening the whole tree.
+	m.rebuild()
 	return m
 }
 
-// rebuild recomputes the visible rows after a structural or expansion change,
-// keeping the cursor within bounds.
+// rebuild recomputes the visible tree rows after a structural or expansion
+// change. In the table view the tree rows aren't shown, so rebuilding is
+// deferred (marked stale) — this avoids materializing a huge row slice for a
+// large file that opens straight into the table. ensureRows realizes the rows
+// when the tree view actually needs them.
 func (m *Model) rebuild() {
+	if m.view == viewTable {
+		m.rowsStale = true
+		return
+	}
 	m.rows = Flatten(m.root, m.collapsed)
+	m.rowsStale = false
 	if m.cursor >= len(m.rows) {
 		m.cursor = len(m.rows) - 1
 	}
 	if m.cursor < 0 {
 		m.cursor = 0
+	}
+}
+
+// ensureRows builds the tree rows if a deferred rebuild left them stale.
+func (m *Model) ensureRows() {
+	if m.rowsStale {
+		m.rows = Flatten(m.root, m.collapsed)
+		m.rowsStale = false
+		if m.cursor >= len(m.rows) {
+			m.cursor = len(m.rows) - 1
+		}
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
 	}
 }
 
