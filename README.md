@@ -39,9 +39,18 @@ Keys (nano-style; `^X` means Ctrl-X):
 | `a` | add a key (object) or element (array) |
 | `^K` | delete the selected node (with confirmation) |
 | `^W` | search keys and values (reveals matches in collapsed branches) |
+| `^T` | toggle the table view for an array of objects |
 | `M-U` / `M-E` | undo / redo (also `^Z` / `^Y`) |
 | `^O` | write the file |
 | `^X` | exit (prompts if there are unsaved changes) |
+
+### Table view
+
+When a document is an array of objects, nanoj opens it as a spreadsheet-style
+grid (rows = elements, columns = the union of keys). You can also press `^T` on
+any such array in the tree view. Arrow keys move between cells and `Enter`
+edits a scalar cell; structural changes (adding keys, changing types) are done
+in the tree view. `^T` or `Esc` returns to the tree.
 
 ## Design
 

@@ -41,18 +41,21 @@ func (m *Model) endPrompt() {
 	m.promptErr = ""
 	m.choiceHint = ""
 	m.pendingNode = nil
+	m.editTarget = nil
 	m.input.Blur()
 	m.input.SetValue("")
 }
 
-// beginEditValue opens a prompt to edit a string or number value in place.
-func (m *Model) beginEditValue() {
-	n := m.rows[m.cursor].Node
+// beginEditValue opens a prompt to edit a string or number value in place. The
+// node is captured as editTarget so the same prompt works from either view.
+func (m *Model) beginEditValue(n *document.Node) {
 	switch n.Kind {
 	case document.KindString:
 		m.beginInput(actEditValue, "Value (string): ", n.Str)
+		m.editTarget = n
 	case document.KindNumber:
 		m.beginInput(actEditValue, "Value (number): ", n.Num.String())
+		m.editTarget = n
 	}
 }
 
@@ -139,7 +142,7 @@ func (m *Model) commitInput() tea.Cmd {
 	val := m.input.Value()
 	switch m.action {
 	case actEditValue:
-		n := m.rows[m.cursor].Node
+		n := m.editTarget
 		if n.Kind == document.KindNumber {
 			// Validate before snapshotting so a rejected entry leaves no
 			// empty undo step.

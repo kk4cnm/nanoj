@@ -89,7 +89,13 @@ far easier to test exhaustively than parser conformance.
     history stack. This is simpler and harder to get wrong than recording
     inverse operations, and documents in scope are small enough that whole-tree
     snapshots are cheap.
-- **Phase 2:** auto-detected table view for arrays of uniform objects;
-  config/env mechanism for user defaults (e.g. default view, indent size).
+- **Phase 2 (in progress):** the table view is implemented — an array of
+  objects renders as a grid (rows = elements, columns = the union of keys),
+  auto-detected at the document root and reachable via ^T on any tabular array.
+  It is a second *rendering* of the same tree: cell edits go through the same
+  mutation primitives and undo history as the tree view, and structural changes
+  are deferred to the tree view to keep the grid focused on fast value entry.
+  Still to come in this phase: a config/env mechanism for user defaults (e.g.
+  default view, indent size) and column scrolling polish.
 - **Later:** undo/redo, search and replace, virtualized rendering for very
   large files, optional JSON5/JSONC support.

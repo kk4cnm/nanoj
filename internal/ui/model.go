@@ -22,6 +22,14 @@ const (
 	modeChoice
 )
 
+// viewMode selects which rendering of the document is on screen.
+type viewMode int
+
+const (
+	viewTree  viewMode = iota // collapsible outline (default, works for any JSON)
+	viewTable                 // spreadsheet grid for an array of objects
+)
+
 // action records what the active prompt will do once answered.
 type action int
 
@@ -71,6 +79,16 @@ type Model struct {
 	redoStack  []snapshot
 	lastSearch string
 
+	// Table view state (used when view == viewTable).
+	view        viewMode
+	table       tableShape
+	tableRow    int
+	tableCol    int
+	tableRowOff int
+	tableColOff int
+
+	editTarget *document.Node // node being edited by the value prompt
+
 	// Prompt state (used in modeInput / modeChoice).
 	mode        mode
 	action      action
@@ -92,6 +110,12 @@ func New(root *document.Node, path string) Model {
 		input:     ti,
 	}
 	m.rebuild()
+	// Auto-detect: if the whole document is an array of objects, open straight
+	// into the table view, which is the more natural way to read tabular data.
+	if shape, ok := tabularShape(root); ok {
+		m.view = viewTable
+		m.table = shape
+	}
 	return m
 }
 
@@ -128,6 +152,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeChoice:
 			return m.updateChoice(msg)
 		default:
+			if m.view == viewTable {
+				return m.updateTable(msg)
+			}
 			return m.updateNormal(msg)
 		}
 
@@ -181,6 +208,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+w":
 		p.beginSearch()
 		return m, textinput.Blink
+	case "ctrl+t":
+		p.enterTable()
 	case "alt+u", "ctrl+z":
 		p.undo()
 	case "alt+e", "ctrl+y":
@@ -310,7 +339,7 @@ func (m *Model) activateCurrent() {
 		n.Bool = !n.Bool
 		m.dirty = true
 	case n.Kind == document.KindString || n.Kind == document.KindNumber:
-		m.beginEditValue()
+		m.beginEditValue(n)
 	default: // null
 		m.status = "null has no value to edit — press t to change its type"
 	}
@@ -348,6 +377,9 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
+	if m.view == viewTable {
+		return m.renderTable()
+	}
 	var b strings.Builder
 
 	b.WriteString(m.titleBar())
@@ -384,7 +416,9 @@ func (m Model) titleBar() string {
 	}
 	title := fmt.Sprintf(" nanoj — %s%s ", mark, name)
 	pos := ""
-	if len(m.rows) > 0 {
+	if m.view == viewTable {
+		pos = fmt.Sprintf(" r%d c%d ", m.tableRow+1, m.tableCol+1)
+	} else if len(m.rows) > 0 {
 		pos = fmt.Sprintf(" %d/%d ", m.cursor+1, len(m.rows))
 	}
 	bar := lipgloss.NewStyle().Reverse(true).Bold(true)
@@ -419,7 +453,7 @@ func (m Model) statusBar() string {
 		} else {
 			line1 = pad(" "+strings.Join([]string{"^X Exit", "^O Write", "^W Search", "Enter Edit", "t Type"}, "    "), m.width)
 		}
-		line2 := pad(" "+strings.Join([]string{"a Add", "^K Delete", "M-U Undo", "M-E Redo", "→/← Expand/Collapse"}, "    "), m.width)
+		line2 := pad(" "+strings.Join([]string{"a Add", "^K Delete", "M-U Undo", "^T Table", "→/← Expand/Collapse"}, "    "), m.width)
 		return line1 + "\n" + line2
 	}
 }
