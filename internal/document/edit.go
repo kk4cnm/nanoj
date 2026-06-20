@@ -40,6 +40,37 @@ func (n *Node) SetString(s string) {
 	n.Str = s
 }
 
+// ScalarFromInput builds a scalar node from user text, inferring its type the
+// way a spreadsheet would: empty or "null" become null, "true"/"false" become
+// booleans, anything that parses as a JSON number becomes a number, and
+// everything else is a string. This is used when filling a blank or null cell,
+// where there is no existing type to preserve.
+func ScalarFromInput(input string) *Node {
+	switch strings.TrimSpace(input) {
+	case "", "null":
+		return NewNull()
+	case "true":
+		return NewBool(true)
+	case "false":
+		return NewBool(false)
+	}
+	if num, ok := ParseNumber(input); ok {
+		return NewNumber(num)
+	}
+	return NewString(input)
+}
+
+// SetScalar replaces the node in place with a scalar whose type is inferred
+// from input (see ScalarFromInput). The node keeps its identity, so a parent's
+// reference to it stays valid.
+func (n *Node) SetScalar(input string) {
+	v := ScalarFromInput(input)
+	n.reset(v.Kind)
+	n.Bool = v.Bool
+	n.Num = v.Num
+	n.Str = v.Str
+}
+
 // SetNumber replaces the node with a number value, validating the text first.
 func (n *Node) SetNumber(s string) error {
 	num, ok := ParseNumber(s)

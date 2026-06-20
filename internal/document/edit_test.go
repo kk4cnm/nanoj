@@ -36,6 +36,46 @@ func TestSetNumberRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestScalarFromInput(t *testing.T) {
+	cases := []struct {
+		in   string
+		kind Kind
+	}{
+		{"", KindNull},
+		{"null", KindNull},
+		{"true", KindBool},
+		{"false", KindBool},
+		{"42", KindNumber},
+		{"-3.14", KindNumber},
+		{"hello", KindString},
+		{"123abc", KindString},
+		{"  ", KindNull}, // whitespace-only trims to empty
+	}
+	for _, c := range cases {
+		if got := ScalarFromInput(c.in).Kind; got != c.kind {
+			t.Errorf("ScalarFromInput(%q).Kind = %s, want %s", c.in, got, c.kind)
+		}
+	}
+	if n := ScalarFromInput("true"); !n.Bool {
+		t.Error("ScalarFromInput(\"true\") should be bool true")
+	}
+	if n := ScalarFromInput("  spaced  "); n.Str != "  spaced  " {
+		t.Errorf("string should preserve original text, got %q", n.Str)
+	}
+}
+
+func TestSetScalarInPlace(t *testing.T) {
+	n := NewNull()
+	n.SetScalar("99")
+	if n.Kind != KindNumber || n.Num.String() != "99" {
+		t.Errorf("expected number 99, got %s %s", n.Kind, n.Num)
+	}
+	n.SetScalar("hi")
+	if n.Kind != KindString || n.Str != "hi" {
+		t.Errorf("expected string hi, got %s %q", n.Kind, n.Str)
+	}
+}
+
 func TestConvertScalarCarryOver(t *testing.T) {
 	// number -> string keeps the digits
 	n := NewNumber("42")

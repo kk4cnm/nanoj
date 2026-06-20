@@ -42,6 +42,7 @@ func (m *Model) endPrompt() {
 	m.choiceHint = ""
 	m.pendingNode = nil
 	m.editTarget = nil
+	m.cellKey = ""
 	m.input.Blur()
 	m.input.SetValue("")
 }
@@ -155,6 +156,21 @@ func (m *Model) commitInput() tea.Cmd {
 		} else {
 			m.pushUndo()
 			n.SetString(val)
+		}
+		m.dirty = true
+		m.endPrompt()
+		m.rebuild()
+		if m.view == viewTable {
+			m.recomputeColWidths()
+		}
+
+	case actSetCell:
+		// Fill a blank or null cell with an inferred-type scalar.
+		m.pushUndo()
+		if m.editTarget != nil {
+			m.editTarget.SetScalar(val) // replace an existing null in place
+		} else if m.pendingNode != nil {
+			_ = m.pendingNode.AddMember(m.cellKey, document.ScalarFromInput(val))
 		}
 		m.dirty = true
 		m.endPrompt()

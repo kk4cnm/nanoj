@@ -32,9 +32,11 @@ func (m *Model) enterTable() {
 	// its parent (i.e. the cursor is sitting on one of the array's elements).
 	if shape, ok := tabularShape(row.Node); ok {
 		m.table = shape
+		m.tablePath = row.Path
 		m.tableRow = 0
 	} else if shape, ok := tabularShape(row.Parent); ok {
 		m.table = shape
+		m.tablePath = parentPath(row.Path)
 		m.tableRow = row.Index
 	} else {
 		m.status = "no array-of-objects here to show as a table"
@@ -143,37 +145,44 @@ func (m *Model) moveTableCursor(dRow, dCol int) {
 	m.clampTableScroll()
 }
 
-// editCell opens the value prompt for the selected scalar cell. Missing keys
-// and nested containers cannot be edited inline (do that in the tree view).
+// editCell opens a value prompt for the selected cell.
+//
+//   - A string or number is edited keeping its type.
+//   - A bool is toggled in place.
+//   - An empty (missing-key) or null cell is filled with a value whose type is
+//     inferred from what you type, so you can build out a table inline.
+//   - A nested container is edited in the tree view (it doesn't fit a cell).
 func (m *Model) editCell() {
 	n := m.table.cellNode(m.tableRow, m.tableCol)
-	if n == nil {
-		m.status = "empty cell — add this key in the tree view (^T)"
-		return
-	}
-	if n.IsContainer() {
+
+	switch {
+	case n == nil:
+		// Empty cell: add the column's key to this row, type inferred on commit.
+		m.pendingNode = m.table.array.Items[m.tableRow]
+		m.cellKey = m.table.columns[m.tableCol]
+		m.beginInput(actSetCell, "Set "+m.cellKey+" (type inferred): ", "")
+	case n.IsContainer():
 		m.status = "nested value — edit it in the tree view (^T)"
-		return
-	}
-	if n.Kind == document.KindBool {
+	case n.Kind == document.KindBool:
 		m.pushUndo()
 		n.Bool = !n.Bool
 		m.dirty = true
 		m.recomputeColWidths()
-		return
+	case n.Kind == document.KindNull:
+		// Replace the null with an inferred-type value.
+		m.editTarget = n
+		m.beginInput(actSetCell, "Set value (type inferred): ", "")
+	default: // string or number — keep the existing type
+		m.beginEditValue(n)
 	}
-	if n.Kind == document.KindNull {
-		m.status = "null cell — change its type in the tree view (^T)"
-		return
-	}
-	m.beginEditValue(n)
 }
 
-// refreshTableShape recomputes the table's column set after an undo/redo, since
-// the underlying array may have changed. Falls back to the tree view if the
-// array is no longer tabular (or no longer present).
+// refreshTableShape re-resolves the table's array and column set after an
+// undo/redo. Undo swaps in a freshly cloned tree, so the array must be looked
+// up again by its structural path rather than by the now-stale pointer. Falls
+// back to the tree view if that path is no longer a tabular array.
 func (m *Model) refreshTableShape() {
-	if shape, ok := tabularShape(m.table.array); ok {
+	if shape, ok := tabularShape(nodeAtPath(m.root, m.tablePath)); ok {
 		m.table = shape
 		m.recomputeColWidths()
 		m.clampTableScroll()

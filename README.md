@@ -49,8 +49,10 @@ Keys (nano-style; `^X` means Ctrl-X):
 When a document is an array of objects, nanoj opens it as a spreadsheet-style
 grid (rows = elements, columns = the union of keys). You can also press `^T` on
 any such array in the tree view. Arrow keys move between cells and `Enter`
-edits a scalar cell; structural changes (adding keys, changing types) are done
-in the tree view. `^T` or `Esc` returns to the tree.
+edits a cell: a string/number keeps its type, a bool toggles, and a blank or
+null cell is filled with a value whose type is inferred from what you type
+(`42` → number, `true` → bool, empty → null, otherwise text). Nested values are
+edited in the tree view. `^T` or `Esc` returns to the tree.
 
 Wide tables scroll horizontally as you move: the row-number column stays fixed,
 and `‹`/`›` markers in the status bar show when more columns lie off-screen.

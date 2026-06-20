@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kk4cnm/nanoj/internal/document"
 )
 
 func TestTabularShapeDetection(t *testing.T) {
@@ -203,6 +204,64 @@ func TestTablePositionIndicator(t *testing.T) {
 	}
 	if !strings.Contains(out, "›") {
 		t.Errorf("expected a › indicator showing more columns to the right:\n%s", out)
+	}
+}
+
+func TestTableEditEmptyCellInfersType(t *testing.T) {
+	// Row 1 is missing key "b"; filling that cell should add it with an
+	// inferred number type.
+	m := New(parse(t, `[{"a":1,"b":2},{"a":3}]`), "f.json")
+	m = sized(m, 80, 24)
+	m = sendKey(m, "down")  // row 1
+	m = sendKey(m, "right") // col 1 ("b"), which is empty for row 1
+	if m.table.cellNode(1, 1) != nil {
+		t.Fatal("setup: cell (1,1) should be empty")
+	}
+	m = sendKey(m, "enter") // edit empty cell
+	if m.mode != modeInput {
+		t.Fatalf("expected prompt for empty cell, got mode %d", m.mode)
+	}
+	m = typeText(m, "7")
+	m = sendKey(m, "enter")
+	got := m.table.cellNode(1, 1)
+	if got == nil || got.Kind != document.KindNumber || got.Num.String() != "7" {
+		t.Errorf("empty cell should become number 7, got %v", got)
+	}
+	if !m.dirty {
+		t.Error("filling a cell should mark dirty")
+	}
+}
+
+func TestTableEditNullCellInfersType(t *testing.T) {
+	m := New(parse(t, `[{"a":null}]`), "f.json")
+	m = sized(m, 80, 24)
+	m = sendKey(m, "enter") // edit the null cell
+	if m.mode != modeInput {
+		t.Fatalf("null cell should open an edit prompt, got mode %d", m.mode)
+	}
+	m = typeText(m, "true")
+	m = sendKey(m, "enter")
+	got := m.table.cellNode(0, 0)
+	if got.Kind != document.KindBool || !got.Bool {
+		t.Errorf("null cell should become bool true, got %v", got)
+	}
+}
+
+func TestTableEditEmptyCellUndo(t *testing.T) {
+	m := New(parse(t, `[{"a":1,"b":2},{"a":3}]`), "f.json")
+	m = sized(m, 80, 24)
+	m = sendKey(m, "down")
+	m = sendKey(m, "right") // empty (1,"b")
+	m = sendKey(m, "enter")
+	m = typeText(m, "9")
+	m = sendKey(m, "enter")
+	if m.table.cellNode(1, 1) == nil {
+		t.Fatal("setup: cell should be filled")
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u"), Alt: true})
+	m = updated.(Model)
+	if m.table.cellNode(1, 1) != nil {
+		t.Errorf("undo should remove the added cell value")
 	}
 }
 

@@ -18,6 +18,7 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/kk4cnm/nanoj/internal/document"
 )
@@ -69,9 +70,48 @@ func Flatten(root *document.Node, collapsed map[string]bool) []Row {
 	return rows
 }
 
-// childPath builds the path of the index-th child of the node at parentPath.
+// childPath builds the path of the index-th child of the node at parent.
 // Using the child index (not the key) keeps paths unambiguous even when object
 // keys contain slashes or are duplicated.
-func childPath(parentPath string, index int) string {
-	return parentPath + "/" + strconv.Itoa(index)
+func childPath(parent string, index int) string {
+	return parent + "/" + strconv.Itoa(index)
+}
+
+// parentPath returns the path of the parent of the node at p ("" for the root).
+func parentPath(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[:i]
+	}
+	return ""
+}
+
+// nodeAtPath resolves a structural path (as produced by Flatten) to its node in
+// the given tree, or nil if the path no longer exists. It lets view state that
+// was captured by path survive the deep-cloning used for undo/redo.
+func nodeAtPath(root *document.Node, path string) *document.Node {
+	if path == "" {
+		return root
+	}
+	n := root
+	for _, seg := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		idx, err := strconv.Atoi(seg)
+		if err != nil {
+			return nil
+		}
+		switch n.Kind {
+		case document.KindArray:
+			if idx < 0 || idx >= len(n.Items) {
+				return nil
+			}
+			n = n.Items[idx]
+		case document.KindObject:
+			if idx < 0 || idx >= len(n.Members) {
+				return nil
+			}
+			n = n.Members[idx].Value
+		default:
+			return nil
+		}
+	}
+	return n
 }

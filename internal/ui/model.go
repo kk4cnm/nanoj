@@ -38,6 +38,7 @@ type action int
 const (
 	actNone action = iota
 	actEditValue
+	actSetCell
 	actAddKey
 	actSaveAs
 	actSearch
@@ -85,7 +86,8 @@ type Model struct {
 	// Table view state (used when view == viewTable).
 	view           viewMode
 	table          tableShape
-	tableColWidths []int // cached column widths; recomputed only when the table changes
+	tablePath      string // structural path of table.array (survives undo clones)
+	tableColWidths []int  // cached column widths; recomputed only when the table changes
 	tableRow       int
 	tableCol       int
 	tableRowOff    int
@@ -103,7 +105,8 @@ type Model struct {
 	prompt      string         // label shown before the input or choices
 	promptErr   string         // validation error shown alongside the prompt
 	choiceHint  string         // key hints shown in modeChoice
-	pendingNode *document.Node // container being added to (actAddKey)
+	pendingNode *document.Node // container being added to (actAddKey / actSetCell)
+	cellKey     string         // column key for a new table cell (actSetCell)
 }
 
 // New builds a Model with default configuration. It is a convenience used by
@@ -133,6 +136,7 @@ func NewWithConfig(root *document.Node, path string, cfg config.Config) Model {
 		if shape, ok := tabularShape(root); ok {
 			m.view = viewTable
 			m.table = shape
+			m.tablePath = "" // the whole document is the array
 			m.recomputeColWidths()
 		}
 	}
