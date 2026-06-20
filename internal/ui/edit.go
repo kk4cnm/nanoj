@@ -191,7 +191,11 @@ func (m *Model) commitInput() tea.Cmd {
 	case actSearch:
 		query := val
 		m.endPrompt()
-		m.doSearch(query)
+		if m.view == viewTable {
+			m.doTableSearch(query)
+		} else {
+			m.doSearch(query)
+		}
 	}
 	return nil
 }

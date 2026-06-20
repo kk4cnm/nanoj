@@ -206,6 +206,67 @@ func TestTablePositionIndicator(t *testing.T) {
 	}
 }
 
+func TestTableSearchFindsCell(t *testing.T) {
+	m := New(parse(t, `[{"a":"apple","b":"red"},{"a":"banana","b":"yellow"}]`), "f.json")
+	m = sized(m, 80, 24)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = updated.(Model)
+	if m.mode != modeInput {
+		t.Fatalf("^W should open the search prompt in table view, got mode %d", m.mode)
+	}
+	m = typeText(m, "yellow")
+	m = sendKey(m, "enter")
+	if m.tableRow != 1 || m.tableCol != 1 {
+		t.Errorf("expected to land on cell (1,1) for 'yellow', got (%d,%d)", m.tableRow, m.tableCol)
+	}
+	if m.status != "found: yellow" {
+		t.Errorf("expected found status, got %q", m.status)
+	}
+}
+
+func TestTableSearchWrapsForward(t *testing.T) {
+	m := New(parse(t, `[{"x":"one"},{"x":"two"},{"x":"three"}]`), "f.json")
+	m = sized(m, 80, 24)
+	// Move to the last row, then search for a value earlier in the table.
+	m = sendKey(m, "end") // row 2
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = updated.(Model)
+	m = typeText(m, "one")
+	m = sendKey(m, "enter")
+	if m.tableRow != 0 {
+		t.Errorf("search should wrap forward to row 0, got %d", m.tableRow)
+	}
+}
+
+func TestTableSearchNotFound(t *testing.T) {
+	m := New(parse(t, `[{"x":"one"}]`), "f.json")
+	m = sized(m, 80, 24)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = updated.(Model)
+	m = typeText(m, "zzz")
+	m = sendKey(m, "enter")
+	if m.status != "not found: zzz" {
+		t.Errorf("expected not-found status, got %q", m.status)
+	}
+}
+
+func TestTableSearchRevealsOffscreenMatch(t *testing.T) {
+	// 50 rows but a short viewport: a match deep in the table must scroll into
+	// view (tableRowOff advances).
+	m := New(parse(t, genRows(50, 2)), "f.json")
+	m = sized(m, 80, 8) // only a few data rows visible
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = updated.(Model)
+	m = typeText(m, "r40c1")
+	m = sendKey(m, "enter")
+	if m.tableRow != 40 || m.tableCol != 1 {
+		t.Fatalf("expected to find r40c1 at (40,1), got (%d,%d)", m.tableRow, m.tableCol)
+	}
+	if m.tableRowOff == 0 {
+		t.Errorf("match deep in the table should have scrolled the viewport")
+	}
+}
+
 func TestTableViewRenders(t *testing.T) {
 	m := New(parse(t, `[{"id":1,"name":"Ada"},{"id":2,"name":"Linus"}]`), "p.json")
 	m = sized(m, 80, 14)

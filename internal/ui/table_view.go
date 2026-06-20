@@ -81,6 +81,9 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "ctrl+t", "esc":
 		p.exitTable()
+	case "ctrl+w":
+		p.beginSearch()
+		return m, textinput.Blink
 	case "up", "ctrl+p", "k":
 		p.moveTableCursor(-1, 0)
 	case "down", "ctrl+n", "j":
@@ -300,7 +303,7 @@ func (m Model) tableStatusBar() string {
 		line1 := lipgloss.NewStyle().Reverse(true).Render(pad(" "+m.status, m.width))
 		return line1 + "\n" + pad(" "+m.tablePosition(), m.width)
 	}
-	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "^O Write", "^X Exit"}, "    "), m.width)
+	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "^W Search", "^O Write", "^X Exit"}, "    "), m.width)
 	help := " " + strings.Join([]string{"↑↓←→ Move", "^A/^E Col ends"}, "    ")
 	line2 := padBetween(help, m.tablePosition()+" ", m.width)
 	return line1 + "\n" + line2

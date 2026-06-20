@@ -1,6 +1,10 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/kk4cnm/nanoj/internal/document"
+)
 
 // beginSearch opens nano's "Where Is" prompt, prefilled with the previous
 // query so pressing Enter repeats the last search.
@@ -46,6 +50,47 @@ func (m *Model) doSearch(query string) {
 		}
 	}
 	m.status = "not found: " + query
+}
+
+// doTableSearch finds the next cell (scanning row-major, forward from the
+// selected cell and wrapping) whose scalar value contains query,
+// case-insensitively, and moves the table cursor to it — scrolling as needed so
+// the match becomes visible.
+func (m *Model) doTableSearch(query string) {
+	if strings.TrimSpace(query) == "" {
+		return
+	}
+	m.lastSearch = query
+	needle := strings.ToLower(query)
+
+	rows := len(m.table.array.Items)
+	cols := len(m.table.columns)
+	total := rows * cols
+	if total == 0 {
+		return
+	}
+
+	start := m.tableRow*cols + m.tableCol
+	for off := 1; off <= total; off++ {
+		idx := (start + off) % total
+		r, c := idx/cols, idx%cols
+		if cellMatches(m.table.cellNode(r, c), needle) {
+			m.tableRow, m.tableCol = r, c
+			m.clampTableScroll()
+			m.status = "found: " + query
+			return
+		}
+	}
+	m.status = "not found: " + query
+}
+
+// cellMatches reports whether a scalar cell's value contains needle (already
+// lower-cased). Container cells (shown as placeholders) are not searched.
+func cellMatches(n *document.Node, needle string) bool {
+	if n == nil || n.IsContainer() {
+		return false
+	}
+	return strings.Contains(strings.ToLower(scalarText(n)), needle)
 }
 
 // rowMatches reports whether the row's key or scalar value contains needle
