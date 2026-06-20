@@ -47,6 +47,7 @@ func (m *Model) enterTable() {
 	m.tableCol = 0
 	m.tableColOff = 0
 	m.tableRowOff = 0
+	m.sortCol = -1 // a freshly opened table starts unsorted
 	m.recomputeColWidths()
 	m.clampTableScroll()
 }
@@ -56,6 +57,23 @@ func (m *Model) enterTable() {
 // plain navigation, so moving the cursor stays O(viewport) on huge tables.
 func (m *Model) recomputeColWidths() {
 	m.tableColWidths = m.table.columnWidths()
+	// Reserve room in the sorted column for the " ▲" / " ▼" header marker.
+	if m.sortCol >= 0 && m.sortCol < len(m.tableColWidths) {
+		m.tableColWidths[m.sortCol] += 2
+	}
+}
+
+// columnHeader returns the header text for a column, with a sort-direction
+// marker appended when it is the active sort column.
+func (m Model) columnHeader(c int) string {
+	name := m.table.columns[c]
+	if c == m.sortCol {
+		if m.sortDesc {
+			return name + " ▼"
+		}
+		return name + " ▲"
+	}
+	return name
 }
 
 // exitTable returns to the tree view, leaving the cursor on the array.
@@ -92,6 +110,8 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		p.copyRow()
 	case "ctrl+u":
 		p.pasteRow()
+	case "s":
+		p.sortByCurrentColumn()
 	case "up", "ctrl+p", "k":
 		p.moveTableCursor(-1, 0)
 	case "down", "ctrl+n", "j":
@@ -263,7 +283,7 @@ func (m Model) renderTable() string {
 	head.WriteString(strings.Repeat(" ", idxW))
 	for c := start; c < end; c++ {
 		head.WriteString(tableColSep)
-		head.WriteString(m.theme.Header.Render(fit(m.table.columns[c], widths[c])))
+		head.WriteString(m.theme.Header.Render(fit(m.columnHeader(c), widths[c])))
 	}
 	b.WriteString(clip(pad(head.String(), m.width), m.width))
 	b.WriteByte('\n')
@@ -318,7 +338,7 @@ func (m Model) tableStatusBar() string {
 		line1 := lipgloss.NewStyle().Reverse(true).Render(pad(" "+m.status, m.width))
 		return line1 + "\n" + pad(" "+m.tablePosition(), m.width)
 	}
-	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "^W Search", "^O Write", "^X Exit"}, "    "), m.width)
+	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "s Sort col", "^W Search", "^X Exit"}, "    "), m.width)
 	help := " " + strings.Join([]string{"↑↓←→ Move", "^K Cut", "M-6 Copy", "^U Paste row"}, "    ")
 	line2 := padBetween(help, m.tablePosition()+" ", m.width)
 	return line1 + "\n" + line2

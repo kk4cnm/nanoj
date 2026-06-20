@@ -59,7 +59,9 @@ and `‹`/`›` markers in the status bar show when more columns lie off-screen.
 `^A`/`^E` jump to the first/last column, `Home`/`End` to the first/last row, and
 `PgUp`/`PgDn` page through rows. `^W` searches cell values and jumps to the next
 match (scrolling it into view). `^K`/`M-6`/`^U` cut/copy/paste whole rows —
-handy for duplicating a row (copy then paste).
+handy for duplicating a row (copy then paste). `s` sorts the rows by the
+selected column (press again to reverse); the sort is type-aware and reorders
+the underlying array, so it persists on save and is undoable.
 
 ## Configuration
 

@@ -97,6 +97,8 @@ type Model struct {
 	tableCol       int
 	tableRowOff    int
 	tableColOff    int
+	sortCol        int  // column the table is sorted by, or -1 for none
+	sortDesc       bool // sort direction for sortCol
 
 	editTarget *document.Node // node being edited by the value prompt
 
@@ -132,6 +134,7 @@ func NewWithConfig(root *document.Node, path string, cfg config.Config) Model {
 		input:     ti,
 		theme:     BuildTheme(cfg),
 		indent:    cfg.Indent,
+		sortCol:   -1,
 	}
 
 	// Choose the initial view per config *before* the first rebuild. "table"
