@@ -9,8 +9,11 @@ data; nanoj writes the file back out as clean, valid JSON every time. Bad
 formatting isn't *caught* — it's impossible, because you never edit the raw
 text directly.
 
-> **Status:** early development. A working interactive tree editor — navigate,
-> edit values, change types, add/delete nodes, and save — backed by a tested
+![nanoj editing a large JSON manifest in the terminal](docs/screenshot.png)
+
+> **Status:** a capable interactive editor. Navigate and edit a collapsible
+> tree or a spreadsheet-style table view; change types, add/cut/copy/paste
+> nodes, search, sort, and save — all backed by a tested
 > valid-by-construction JSON engine. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Why it exists
