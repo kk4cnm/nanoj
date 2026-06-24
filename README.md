@@ -1,5 +1,7 @@
 # nanoj
 
+The JSON editor that can’t save broken JSON.
+
 A terminal app for viewing and editing JSON — think nano, but it understands
 JSON structure so you can't accidentally break the formatting.
 
@@ -52,11 +54,28 @@ Keys (nano-style; `^X` means Ctrl-X):
 | `t` | change a value's type |
 | `a` | add a key (object) or element (array) |
 | `^K` / `M-6` / `^U` | cut / copy / paste a node (recoverable via paste or undo) |
-| `^W` | search keys and values (reveals matches in collapsed branches) |
+| `^W` | search keys and values, or filter by predicate (reveals matches in collapsed branches) |
 | `^T` | toggle the table view for an array of objects |
 | `M-U` / `M-E` | undo / redo (also `^Z` / `^Y`) |
 | `^O` | write the file |
 | `^X` | exit (prompts if there are unsaved changes) |
+
+### Search filters
+
+`^W` does a plain key-or-value substring search by default. For large documents
+you can also search by predicate using a small grammar:
+
+| Term | Matches |
+| --- | --- |
+| `key:name` | nodes whose key contains `name` |
+| `type:number` | nodes of that JSON type (`null`/`bool`/`number`/`string`/`array`/`object`, plus aliases like `boolean`, `int`, `obj`) |
+| `value:123` | scalar values containing `123` |
+| `key=value` | a field whose key *equals* `key` and value *equals* `value` (exact, case-insensitive) |
+
+Terms are combined with AND, so `key:port type:number` jumps to numeric `port`
+fields. A query with no predicate term is treated as a single substring exactly
+as before (including queries that contain spaces). In the table view, a cell's
+column name acts as its key, so `key:` and `key=value` work there too.
 
 ### Table view
 

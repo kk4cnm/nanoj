@@ -2,8 +2,6 @@ package ui
 
 import (
 	"strings"
-
-	"github.com/kk4cnm/nanoj/internal/document"
 )
 
 // beginSearch opens nano's "Where Is" prompt, prefilled with the previous
@@ -12,16 +10,20 @@ func (m *Model) beginSearch() {
 	m.beginInput(actSearch, "Search: ", m.lastSearch)
 }
 
-// doSearch finds the next node (forward from the cursor, wrapping) whose key or
-// scalar value contains query, case-insensitively. Matches inside collapsed
-// containers are revealed by expanding their ancestors. The whole tree is
-// searched, not just the visible rows.
+// doSearch finds the next node (forward from the cursor, wrapping) that matches
+// query. A bare query is a key-or-value substring; a query using the predicate
+// grammar (key:/type:/value:/key=value, see parseQuery) matches structurally.
+// Matches inside collapsed containers are revealed by expanding their
+// ancestors. The whole tree is searched, not just the visible rows.
 func (m *Model) doSearch(query string) {
 	if strings.TrimSpace(query) == "" {
 		return
 	}
 	m.lastSearch = query
-	needle := strings.ToLower(query)
+	q := parseQuery(query)
+	if q.empty() {
+		return
+	}
 
 	// Flatten with no collapsing so every node is searchable.
 	all := Flatten(m.root, nil)
@@ -41,7 +43,7 @@ func (m *Model) doSearch(query string) {
 	n := len(all)
 	for off := 1; off <= n; off++ {
 		r := all[(start+off)%n]
-		if rowMatches(r, needle) {
+		if q.matchNode(r.Key, r.HasKey, r.Node) {
 			m.revealPath(r.Path)
 			m.rebuild()
 			m.selectByPath(r.Path)
@@ -53,15 +55,18 @@ func (m *Model) doSearch(query string) {
 }
 
 // doTableSearch finds the next cell (scanning row-major, forward from the
-// selected cell and wrapping) whose scalar value contains query,
-// case-insensitively, and moves the table cursor to it — scrolling as needed so
-// the match becomes visible.
+// selected cell and wrapping) that matches query and moves the table cursor to
+// it — scrolling as needed so the match becomes visible. A cell's "key" for
+// predicate matching is its column name, so key:/key=value terms work too.
 func (m *Model) doTableSearch(query string) {
 	if strings.TrimSpace(query) == "" {
 		return
 	}
 	m.lastSearch = query
-	needle := strings.ToLower(query)
+	q := parseQuery(query)
+	if q.empty() {
+		return
+	}
 
 	rows := len(m.table.array.Items)
 	cols := len(m.table.columns)
@@ -74,7 +79,7 @@ func (m *Model) doTableSearch(query string) {
 	for off := 1; off <= total; off++ {
 		idx := (start + off) % total
 		r, c := idx/cols, idx%cols
-		if cellMatches(m.table.cellNode(r, c), needle) {
+		if q.matchNode(m.table.columns[c], true, m.table.cellNode(r, c)) {
 			m.tableRow, m.tableCol = r, c
 			m.clampTableScroll()
 			m.status = "found: " + query
@@ -82,29 +87,6 @@ func (m *Model) doTableSearch(query string) {
 		}
 	}
 	m.status = "not found: " + query
-}
-
-// cellMatches reports whether a scalar cell's value contains needle (already
-// lower-cased). Container cells (shown as placeholders) are not searched.
-func cellMatches(n *document.Node, needle string) bool {
-	if n == nil || n.IsContainer() {
-		return false
-	}
-	return strings.Contains(strings.ToLower(scalarText(n)), needle)
-}
-
-// rowMatches reports whether the row's key or scalar value contains needle
-// (which must already be lower-cased).
-func rowMatches(r Row, needle string) bool {
-	if r.HasKey && strings.Contains(strings.ToLower(r.Key), needle) {
-		return true
-	}
-	if !r.Node.IsContainer() {
-		if strings.Contains(strings.ToLower(scalarText(r.Node)), needle) {
-			return true
-		}
-	}
-	return false
 }
 
 // revealPath expands every ancestor of path so the target row becomes visible.
