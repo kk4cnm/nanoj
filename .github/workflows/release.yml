@@ -5,8 +5,9 @@ on:
   push:
     tags: ["v*"]
 
+# Least privilege by default; only the publishing job is granted write below.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # Stage 1: build every target in parallel and upload each binary as an
@@ -47,6 +48,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
     steps:
       - uses: actions/download-artifact@v4
         with:
