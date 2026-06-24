@@ -74,9 +74,10 @@ type Model struct {
 	width  int
 	height int
 
-	status   string // transient message shown in the help area
-	dirty    bool   // unsaved changes
-	quitting bool
+	status          string // transient message shown in the help area
+	dirty           bool   // unsaved changes
+	quitting        bool
+	commentsDropped bool // loaded leniently; comments were removed (warn the user)
 
 	undoStack  []snapshot
 	redoStack  []snapshot
@@ -152,6 +153,15 @@ func NewWithConfig(root *document.Node, path string, cfg config.Config) Model {
 	// rebuild is lazy in table view, so opening a large array of records (the
 	// common big-file case) skips flattening the whole tree.
 	m.rebuild()
+	return m
+}
+
+// WithCommentWarning marks the model as having been loaded leniently with
+// comments stripped, so it warns the user (in the title and at save time) that
+// saving writes strict JSON without those comments.
+func (m Model) WithCommentWarning() Model {
+	m.commentsDropped = true
+	m.status = "comments were removed on load — saving writes strict JSON"
 	return m
 }
 
@@ -476,7 +486,11 @@ func (m Model) titleBar() string {
 	if m.dirty {
 		mark = "*"
 	}
-	title := fmt.Sprintf(" nanoj — %s%s ", mark, name)
+	warn := ""
+	if m.commentsDropped {
+		warn = "⚠ "
+	}
+	title := fmt.Sprintf(" nanoj — %s%s%s ", warn, mark, name)
 	pos := ""
 	if m.view == viewTable {
 		pos = fmt.Sprintf(" r%d c%d ", m.tableRow+1, m.tableCol+1)

@@ -191,6 +191,9 @@ func (m *Model) commitInput() tea.Cmd {
 		m.dirty = false
 		m.endPrompt()
 		m.status = "Wrote " + path
+		if m.commentsDropped {
+			m.status += " (without comments)"
+		}
 
 	case actSearch:
 		query := val

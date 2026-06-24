@@ -31,6 +31,7 @@ import (
 func main() {
 	configPath := flag.String("config", "", "path to a config file (overrides the default location)")
 	writeConfig := flag.Bool("write-config", false, "write an example config file and exit")
+	lenient := flag.Bool("lenient", false, "tolerate // and /* */ comments and trailing commas (JSONC) when reading; comments are dropped on save")
 	flag.Parse()
 
 	if *writeConfig {
@@ -62,14 +63,26 @@ func main() {
 		fmt.Fprintf(os.Stderr, "nanoj: %v\n", err)
 		os.Exit(1)
 	}
-	doc, err := document.Parse(f)
+	var (
+		doc             *document.Node
+		commentsDropped bool
+	)
+	if *lenient {
+		doc, commentsDropped, err = document.ParseLenient(f)
+	} else {
+		doc, err = document.Parse(f)
+	}
 	f.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "nanoj: %s is not valid JSON: %v\n", path, err)
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(ui.NewWithConfig(doc, path, cfg), tea.WithAltScreen())
+	model := ui.NewWithConfig(doc, path, cfg)
+	if commentsDropped {
+		model = model.WithCommentWarning()
+	}
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "nanoj: %v\n", err)
 		os.Exit(1)

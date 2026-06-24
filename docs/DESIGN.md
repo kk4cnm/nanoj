@@ -62,6 +62,18 @@ correct handling of escaping, Unicode, and number formats for free. Our
 correctness story lives on the *output* side (valid by construction), which is
 far easier to test exhaustively than parser conformance.
 
+This principle also shaped how lenient (JSONC) input works. The optional
+`--lenient` flag tolerates `//` and `/* */` comments and trailing commas, but
+rather than writing a JSON5 grammar, nanoj runs a small *string-aware*
+preprocessor (`StripJSONC`) that removes those constructs and then hands clean
+JSON to the same strict `Parse`. So key order, number precision, and escaping
+all flow through the one trusted path. Comments have nowhere to live in the
+six-type model, so they are dropped and the user is warned — lenient mode is an
+"import and normalize" tool, not comment-preserving round-trip editing (which
+would fight the valid-by-construction model). Full JSON5 — single-quoted
+strings, unquoted keys — is intentionally out of scope for now, partly because
+the available Go JSON5 libraries decode to maps and would lose key order.
+
 ## Fidelity choices
 
 - **Key order is preserved.** Objects store members as an ordered slice, not a

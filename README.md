@@ -29,7 +29,18 @@ Requires [Go](https://go.dev/dl/) 1.21+.
 ```sh
 go build -o nanoj .
 ./nanoj path/to/file.json
+./nanoj --lenient path/to/config.jsonc   # tolerate comments + trailing commas
 ```
+
+### Reading JSONC (comments and trailing commas)
+
+By default nanoj reads strict JSON. Pass `--lenient` to also accept `//` and
+`/* */` comments and trailing commas — handy for opening config-style files.
+Because the document model has nowhere to store comments, **they are dropped**,
+and saving writes strict JSON; nanoj shows a `⚠` in the title and a reminder
+when you save so this is never a silent surprise. (Trailing commas are simply
+normalized away — that's not lossy.) Think of it as "import sloppy JSON and
+clean it up" rather than "edit JSONC in place."
 
 Keys (nano-style; `^X` means Ctrl-X):
 
