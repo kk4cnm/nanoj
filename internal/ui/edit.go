@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kk4cnm/nanoj/internal/document"
+	"github.com/kk4cnm/nanoj/internal/schema"
 )
 
 // This file holds the editing actions triggered from modeNormal and the prompt
@@ -43,8 +46,28 @@ func (m *Model) endPrompt() {
 	m.pendingNode = nil
 	m.editTarget = nil
 	m.cellKey = ""
+	m.enumTarget = nil
+	m.enumChoices = nil
 	m.input.Blur()
 	m.input.SetValue("")
+}
+
+// beginEnumPick offers a schema enum as a numeric single-key choice, reusing the
+// modeChoice prompt. For a long enum (more than nine values) it falls back to
+// free-text entry so the hints stay readable.
+func (m *Model) beginEnumPick(n *document.Node, a schema.Annotation) {
+	if len(a.EnumValues) > 9 {
+		m.beginEditValue(n)
+		return
+	}
+	m.enumTarget = n
+	m.enumChoices = a.EnumValues
+	disp := a.EnumDisplay()
+	hints := make([]string, len(disp))
+	for i, d := range disp {
+		hints[i] = fmt.Sprintf("%d) %s", i+1, d)
+	}
+	m.beginChoice(actEnumPick, "Pick value:", strings.Join(hints, "   "))
 }
 
 // beginEditValue opens a prompt to edit a string or number value in place. The
@@ -62,7 +85,7 @@ func (m *Model) beginEditValue(n *document.Node) {
 
 // beginChangeType opens the type picker for the selected node.
 func (m *Model) beginChangeType() {
-	if len(m.rows) == 0 {
+	if len(m.rows) == 0 || m.readOnlyBlocked() {
 		return
 	}
 	n := m.rows[m.cursor].Node
@@ -76,7 +99,7 @@ func (m *Model) beginChangeType() {
 // beginAddNode adds a child to the selected container, or a sibling within the
 // selected node's parent. Objects prompt for a key; arrays append immediately.
 func (m *Model) beginAddNode() {
-	if len(m.rows) == 0 {
+	if len(m.rows) == 0 || m.readOnlyBlocked() {
 		return
 	}
 	row := m.rows[m.cursor]
@@ -111,6 +134,10 @@ func (m *Model) beginAddNode() {
 
 // beginSave opens the "write out" prompt prefilled with the current path.
 func (m *Model) beginSave() {
+	if m.readOnly {
+		m.status = "read-only mode — saving is disabled"
+		return
+	}
 	m.beginInput(actSaveAs, "File Name to Write: ", m.path)
 }
 
@@ -230,6 +257,22 @@ func (m *Model) handleChoice(key string) tea.Cmd {
 		m.dirty = true
 		m.endPrompt()
 		m.rebuild()
+
+	case actEnumPick:
+		idx, err := strconv.Atoi(key)
+		if err != nil || idx < 1 || idx > len(m.enumChoices) {
+			return nil // ignore stray keys; stay in the picker
+		}
+		val := m.enumChoices[idx-1]
+		target := m.enumTarget
+		m.pushUndo()
+		*target = *document.FromGo(val)
+		m.dirty = true
+		m.endPrompt()
+		m.rebuild()
+		if m.view == viewTable {
+			m.recomputeColWidths()
+		}
 
 	case actConfirmQuit:
 		switch key {

@@ -23,61 +23,26 @@ non-invasive.
 - v0.1 tree editor; v0.2 table view + accessibility theming + large-file speed;
   v0.3 table search, inline cell edit, cut/copy/paste, sort-by-column; v0.4
   `--lenient` JSONC input.
+- **Search filters** — `^W` predicate grammar (`key:`/`type:`/`value:`/`key=value`),
+  ANDed, in both views; plain substring still works.
+- **Schema awareness** (`--schema`) — read-only overlay via
+  `santhosh-tekuri/jsonschema`: invalid values marked (`✗`), required and
+  missing-required fields, expected type + `description` in the status line,
+  `enum` pick-lists (reusing `modeChoice`), and `$ref`/`$defs` resolved by
+  walking the compiled schema. Still future: surfacing `allOf`/`anyOf`/`oneOf`
+  per-field, and table-view cell markers (overlays currently force the tree
+  view, which is where markers render).
+- **JSON diff** (`--diff baseline.json working.json`) — path-keyed structural
+  overlay: `+`/`~` markers inline and a `[diff +A~C-R]` summary; objects by key,
+  arrays positional. Removed nodes have no working-tree path, so they surface as
+  the `-R` count rather than inline rows.
+- **Read-only mode** (`--view`) — gates every edit and save; `[read-only]` badge;
+  navigation/search/expand still work. Composes with `--schema` and `--diff`.
+
+The last three share the **read-only path overlay** pattern (below): they
+annotate nodes by structural path during render and never mutate the tree.
 
 ## Planned (priority order)
-
-### 1. Search filters
-Extend the existing `^W` search with a small query grammar so large documents
-are navigable by predicate, not just substring:
-
-- `key:name` — match on key
-- `type:number` — match by JSON type
-- `value:123` — match on value
-- (stretch) `key=value` — key/value equality
-
-**Approach:** parse the query into predicates and feed them through the existing
-`rowMatches` / `cellMatches` path in both views. Plain text (no prefix) keeps
-working as today. Low risk, no architectural change. Good first contribution.
-
-### 2. Schema awareness (`--schema schema.json`)
-The headline feature for nanoj's audience (MCP manifests, OpenAPI, Home
-Assistant, Kubernetes). A JSON Schema becomes a read-only overlay:
-
-- invalid nodes highlighted
-- required fields marked
-- `enum` values offered as a pick-list (reuses the existing `modeChoice` UI)
-- expected type shown/enforced on edit
-- field `description` shown in the status/help line
-
-**Approach (phased):**
-- **A.** Validate the whole document with a library
-  (`santhosh-tekuri/jsonschema`, draft 2020-12); map its error locations
-  (JSON pointers) to nodes and highlight. Add required-field markers and
-  `description` display. All read-only.
-- **B.** `enum` pick-lists and type-expected hints during editing.
-- **C.** The hard parts — `$ref`, `allOf`/`anyOf`/`oneOf`, conditionals.
-  Support last, and accept imperfect coverage.
-
-**Traps:** full JSON Schema is a large spec; lean on the library for *matching*
-and keep our own logic to "find the subschema for this path" (for enum/
-description/required). Don't promise full-spec support.
-
-### 3. JSON diff (`--diff a.json b.json`, and compare-against-disk)
-Structured diffs beat line diffs for JSON. Render a read-only overlay with
-`+` / `-` / `~` markers by path.
-
-**Approach:** tree-diff keyed by path — objects compared by key, arrays
-**positionally** for v1. Reuse the path-overlay pattern from schema.
-
-**Trap:** array move/LCS detection is a rabbit hole — explicitly out of scope
-for v1.
-
-### 4. Read-only inspection mode (`--view`)
-Browse without any chance of mutation: gate the editing keys, show a
-`[read-only]` indicator. Framed honestly as a **safety/intent** mode — note it
-does *not* meaningfully reduce memory (undo snapshots are only created on edit,
-so a browsing session never accrues them anyway). Cheap; could ride along with
-the diff work.
 
 ### 5. YAML / TOML interop (deferred, scoped as conversion)
 High adoption potential but the only item that touches nanoj's identity. Reading

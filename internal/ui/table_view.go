@@ -179,6 +179,9 @@ func (m *Model) moveTableCursor(dRow, dCol int) {
 //     inferred from what you type, so you can build out a table inline.
 //   - A nested container is edited in the tree view (it doesn't fit a cell).
 func (m *Model) editCell() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	n := m.table.cellNode(m.tableRow, m.tableCol)
 
 	switch {

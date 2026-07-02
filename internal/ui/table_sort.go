@@ -14,6 +14,9 @@ import (
 // underlying array in the document (so it persists on save and is undoable),
 // and the cursor follows the previously-selected row to its new position.
 func (m *Model) sortByCurrentColumn() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	items := m.table.array.Items
 	if len(m.table.columns) == 0 {
 		return

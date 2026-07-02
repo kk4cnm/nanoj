@@ -17,6 +17,14 @@ type Theme struct {
 	Structure lipgloss.Style
 	Header    lipgloss.Style
 	Selection lipgloss.Style
+
+	// Overlay decorations for the schema and diff features. These are rendered
+	// as glyph markers (✗ / + / ~) so meaning never depends on color alone; the
+	// color is a bonus that is dropped under NO_COLOR. They are not part of the
+	// user-configurable palette.
+	Invalid lipgloss.Style // schema: a value that fails validation
+	Added   lipgloss.Style // diff: a node present only in the working tree
+	Changed lipgloss.Style // diff: a node whose value/type differs
 }
 
 // builtinThemes are the named base palettes. Beyond color, the accessible
@@ -101,6 +109,15 @@ func BuildTheme(cfg config.Config) Theme {
 	get := func(name string) lipgloss.Style {
 		return toLipgloss(merged[name], cfg.NoColor)
 	}
+	// Overlay markers: bold (so they read in monochrome) plus a color when
+	// available. Suppressed color under NoColor keeps them attribute-only.
+	mark := func(color string) lipgloss.Style {
+		st := lipgloss.NewStyle().Bold(true)
+		if !cfg.NoColor && color != "" {
+			st = st.Foreground(lipgloss.Color(color))
+		}
+		return st
+	}
 	return Theme{
 		Key:       get("key"),
 		String:    get("string"),
@@ -110,6 +127,9 @@ func BuildTheme(cfg config.Config) Theme {
 		Structure: get("structure"),
 		Header:    get("header"),
 		Selection: get("selection"),
+		Invalid:   mark("1"), // red
+		Added:     mark("2"), // green
+		Changed:   mark("3"), // yellow
 	}
 }
 

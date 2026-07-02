@@ -21,6 +21,7 @@ func (m *Model) snapshotState() snapshot {
 func (m *Model) pushUndo() {
 	m.undoStack = append(m.undoStack, m.snapshotState())
 	m.redoStack = nil
+	m.overlayStale = true // the impending mutation invalidates the overlays
 }
 
 // popUndo discards the most recent undo snapshot. It is used when a mutation
@@ -33,6 +34,9 @@ func (m *Model) popUndo() {
 
 // undo restores the previous state, pushing the current state onto redo.
 func (m *Model) undo() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	if len(m.undoStack) == 0 {
 		m.status = "nothing to undo"
 		return
@@ -46,6 +50,9 @@ func (m *Model) undo() {
 
 // redo re-applies the most recently undone state.
 func (m *Model) redo() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	if len(m.redoStack) == 0 {
 		m.status = "nothing to redo"
 		return
@@ -63,6 +70,7 @@ func (m *Model) restore(s snapshot) {
 	m.root = s.root
 	m.collapsed = s.collapsed
 	m.dirty = s.dirty
+	m.overlayStale = true // undo/redo swaps the tree; overlays must be recomputed
 	m.rebuild()
 	m.cursor = s.cursor
 	if m.cursor >= len(m.rows) {

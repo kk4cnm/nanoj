@@ -25,6 +25,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kk4cnm/nanoj/internal/config"
 	"github.com/kk4cnm/nanoj/internal/document"
+	"github.com/kk4cnm/nanoj/internal/schema"
 	"github.com/kk4cnm/nanoj/internal/ui"
 )
 
@@ -32,6 +33,9 @@ func main() {
 	configPath := flag.String("config", "", "path to a config file (overrides the default location)")
 	writeConfig := flag.Bool("write-config", false, "write an example config file and exit")
 	lenient := flag.Bool("lenient", false, "tolerate // and /* */ comments and trailing commas (JSONC) when reading; comments are dropped on save")
+	schemaPath := flag.String("schema", "", "validate against a JSON Schema and show a read-only overlay (invalid values, required fields, enums, descriptions)")
+	diffPath := flag.String("diff", "", "compare against a baseline JSON file and show a read-only diff overlay")
+	readOnly := flag.Bool("view", false, "read-only mode: browse and search without any chance of editing or saving")
 	flag.Parse()
 
 	if *writeConfig {
@@ -82,9 +86,51 @@ func main() {
 	if commentsDropped {
 		model = model.WithCommentWarning()
 	}
+
+	// A broken schema or missing baseline shouldn't stop the user from editing:
+	// warn and carry on without that overlay.
+	if *schemaPath != "" {
+		if checker, err := schema.Load(*schemaPath); err != nil {
+			fmt.Fprintf(os.Stderr, "nanoj: ignoring schema %s: %v\n", *schemaPath, err)
+		} else {
+			model = model.WithSchema(checker)
+		}
+	}
+	if *diffPath != "" {
+		if baseline, err := loadJSON(*diffPath); err != nil {
+			fmt.Fprintf(os.Stderr, "nanoj: ignoring diff baseline %s: %v\n", *diffPath, err)
+		} else {
+			model = model.WithDiff(baseline, baseName(*diffPath))
+		}
+	}
+	if *readOnly {
+		model = model.ReadOnly()
+	}
+
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "nanoj: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// loadJSON parses a strict-JSON file into a document tree (used for the diff
+// baseline).
+func loadJSON(path string) (*document.Node, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return document.Parse(f)
+}
+
+// baseName returns the final path element, for compact display in the title.
+func baseName(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' || path[i] == '\\' {
+			return path[i+1:]
+		}
+	}
+	return path
 }

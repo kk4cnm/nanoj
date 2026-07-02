@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/kk4cnm/nanoj/internal/document"
 )
 
@@ -29,14 +30,34 @@ func scalarText(n *document.Node) string {
 	}
 }
 
+// rowDecor is an overlay marker for a row: a single glyph (✗ / + / ~) drawn in
+// a left gutter, with the style to render it. The zero value means no marker.
+type rowDecor struct {
+	marker string
+	style  lipgloss.Style
+}
+
 // renderRow produces the styled string for a single visible row.
 //
 // indent shows nesting; a disclosure marker (▼/▸) precedes containers and is
 // replaced by blank space for scalars so labels line up. Objects and arrays
 // show their delimiter when expanded and a collapsed summary (with child
 // count) when not.
-func renderRow(theme Theme, r Row, expanded, selected bool) string {
+//
+// When gutter is true a two-column marker gutter is reserved on the left (used
+// by the schema and diff overlays); it is omitted otherwise so the plain view
+// looks exactly as before.
+func renderRow(theme Theme, r Row, expanded, selected bool, decor rowDecor, gutter bool) string {
 	var b strings.Builder
+
+	if gutter {
+		if decor.marker != "" {
+			b.WriteString(decor.style.Render(decor.marker))
+			b.WriteByte(' ')
+		} else {
+			b.WriteString("  ")
+		}
+	}
 
 	b.WriteString(strings.Repeat("  ", r.Depth))
 

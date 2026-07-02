@@ -34,7 +34,7 @@ func (m *Model) copyCurrent() {
 // cutCurrent copies the selected node to the clipboard and removes it. There is
 // no confirmation: a cut is recoverable via paste (^U) or undo (M-U).
 func (m *Model) cutCurrent() {
-	if len(m.rows) == 0 {
+	if len(m.rows) == 0 || m.readOnlyBlocked() {
 		return
 	}
 	r := m.rows[m.cursor]
@@ -54,6 +54,9 @@ func (m *Model) cutCurrent() {
 // pasteCurrent inserts a clone of the clipboard relative to the selection: as
 // the last child when a container is selected, otherwise as the next sibling.
 func (m *Model) pasteCurrent() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	if m.clipboard == nil {
 		m.status = "clipboard is empty"
 		return
@@ -109,6 +112,9 @@ func (m *Model) copyRow() {
 
 // cutRow copies the selected row to the clipboard and removes it.
 func (m *Model) cutRow() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	arr := m.table.array
 	if len(arr.Items) == 0 {
 		return
@@ -127,6 +133,9 @@ func (m *Model) cutRow() {
 // pasteRow inserts a clone of the clipboard as a row after the selection. Only
 // objects can be table rows.
 func (m *Model) pasteRow() {
+	if m.readOnlyBlocked() {
+		return
+	}
 	if m.clipboard == nil {
 		m.status = "clipboard is empty"
 		return

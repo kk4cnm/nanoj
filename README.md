@@ -31,7 +31,10 @@ Requires [Go](https://go.dev/dl/) 1.21+.
 ```sh
 go build -o nanoj .
 ./nanoj path/to/file.json
-./nanoj --lenient path/to/config.jsonc   # tolerate comments + trailing commas
+./nanoj --lenient path/to/config.jsonc      # tolerate comments + trailing commas
+./nanoj --schema schema.json config.json    # validate against a JSON Schema
+./nanoj --diff old.json new.json             # show a structural diff overlay
+./nanoj --view data.json                     # read-only: browse without editing
 ```
 
 ### Reading JSONC (comments and trailing commas)
@@ -95,6 +98,59 @@ match (scrolling it into view). `^K`/`M-6`/`^U` cut/copy/paste whole rows —
 handy for duplicating a row (copy then paste). `s` sorts the rows by the
 selected column (press again to reverse); the sort is type-aware and reorders
 the underlying array, so it persists on save and is undoable.
+
+## Schema awareness
+
+Point nanoj at a [JSON Schema](https://json-schema.org/) and it validates the
+document and overlays what it learns — without ever touching your data:
+
+```sh
+nanoj --schema config.schema.json config.json
+```
+
+- Values that **fail validation** are marked with a red `✗` in a left gutter.
+- **Required** fields are flagged, and an object that is **missing** a required
+  key reports it in the status line.
+- The selected field's **expected type** and **description** show in the status
+  line, so the schema doubles as inline documentation.
+- When a field is constrained to an **enum**, pressing `Enter` offers the
+  allowed values as a numbered pick-list instead of free-text entry.
+
+It's a read-only overlay: the schema is never written back, and validation
+re-runs as you edit so the markers stay live. `$ref` (including `$defs`) is
+resolved; the deeper combinators (`allOf`/`anyOf`/`oneOf`) are matched by the
+validator but not yet surfaced per-field. A schema that fails to compile is
+reported and skipped so it never blocks editing.
+
+## Diff overlay
+
+Compare a document against a baseline and see a structured, path-aware diff
+right in the tree:
+
+```sh
+nanoj --diff baseline.json working.json   # opens working.json, compared to baseline.json
+```
+
+- Added nodes are marked `+`, changed values `~`; the title bar summarizes the
+  counts (`[diff +A~C-R]`).
+- Objects are compared by key and arrays positionally (no move/LCS detection —
+  a reordered array reads as a run of changes).
+- Removed nodes don't exist in the working tree, so they can't be marked inline;
+  they're surfaced as the `-R` count in the summary.
+
+Like the schema overlay, it's read-only and recomputes as you edit.
+
+## Read-only mode
+
+```sh
+nanoj --view data.json
+```
+
+Browse and search a document with **no chance of changing it**: every editing
+key and save is disabled and the title shows `[read-only]`. Handy for
+inspecting a file (optionally alongside `--schema` or `--diff`) when you only
+want to look. Note this is a safety/intent mode — it doesn't meaningfully change
+memory use, since undo snapshots are only ever created by edits.
 
 ## Configuration
 

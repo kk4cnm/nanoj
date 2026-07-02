@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kk4cnm/nanoj/internal/config"
 	"github.com/kk4cnm/nanoj/internal/document"
+	"github.com/kk4cnm/nanoj/internal/schema"
 )
 
 // mode is the model's top-level input mode. In modeNormal keystrokes navigate
@@ -44,6 +45,7 @@ const (
 	actSearch
 	actTypePick
 	actConfirmQuit
+	actEnumPick
 )
 
 // snapshot is a point-in-time copy of the editable state for undo/redo. The
@@ -106,6 +108,29 @@ type Model struct {
 	theme  Theme  // resolved display styles (from config)
 	indent string // per-level indent unit used when saving
 
+	// Read-only mode gates every mutation and disables saving; the document can
+	// be browsed and searched but not changed.
+	readOnly bool
+
+	// Optional schema overlay (--schema). schema compiles the JSON Schema;
+	// schemaOverlay is the current per-path annotation, recomputed after edits.
+	schema        *schema.Checker
+	schemaOverlay schema.Overlay
+
+	// Optional diff overlay (--diff): the working tree compared to a baseline.
+	diffBaseline *document.Node
+	diffResult   document.DiffResult
+	diffName     string
+	hasDiff      bool
+
+	// overlayStale marks that the tree changed and the schema/diff overlays need
+	// recomputing before the next render.
+	overlayStale bool
+
+	// Enum picker state (actEnumPick): the node being set and the allowed values.
+	enumTarget  *document.Node
+	enumChoices []any
+
 	// Prompt state (used in modeInput / modeChoice).
 	mode        mode
 	action      action
@@ -165,6 +190,78 @@ func (m Model) WithCommentWarning() Model {
 	return m
 }
 
+// WithSchema attaches a compiled JSON Schema as a read-only overlay and
+// computes the initial annotation. Overlays render in the tree view, so a
+// document that would auto-open as a table is switched to the tree.
+func (m Model) WithSchema(c *schema.Checker) Model {
+	m.schema = c
+	m.schemaOverlay = c.Annotate(m.root)
+	m.status = m.schemaOverlay.Summary
+	m.forceTreeView()
+	return m
+}
+
+// WithDiff attaches a baseline document to compare against, as a read-only
+// overlay. name is shown in the title. Like schema, it renders in the tree view.
+func (m Model) WithDiff(baseline *document.Node, name string) Model {
+	m.diffBaseline = baseline
+	m.diffName = name
+	m.hasDiff = true
+	m.diffResult = document.Diff(baseline, m.root)
+	m.status = m.diffSummary()
+	m.forceTreeView()
+	return m
+}
+
+// ReadOnly puts the model in read-only mode: navigation and search still work,
+// but every edit and save is blocked.
+func (m Model) ReadOnly() Model {
+	m.readOnly = true
+	return m
+}
+
+// forceTreeView switches an auto-opened table back to the tree so overlay
+// markers (which are a tree-view decoration) are visible from the start.
+func (m *Model) forceTreeView() {
+	if m.view == viewTable {
+		m.view = viewTree
+		m.rebuild()
+	}
+}
+
+// refreshOverlays recomputes the schema and diff overlays when the tree has
+// changed. Called once per key event (after the edit is applied) so a render
+// never sees stale annotations.
+func (m *Model) refreshOverlays() {
+	if !m.overlayStale {
+		return
+	}
+	m.overlayStale = false
+	if m.schema != nil {
+		m.schemaOverlay = m.schema.Annotate(m.root)
+	}
+	if m.hasDiff {
+		m.diffResult = document.Diff(m.diffBaseline, m.root)
+	}
+}
+
+// diffSummary is the one-line description of the diff overlay.
+func (m Model) diffSummary() string {
+	d := m.diffResult
+	return fmt.Sprintf("diff vs %s: +%d added  ~%d changed  -%d removed",
+		m.diffName, d.Added, d.Changed, d.Removed)
+}
+
+// readOnlyBlocked reports read-only mode and sets an explanatory status. Edit
+// entry points call it and bail when it returns true.
+func (m *Model) readOnlyBlocked() bool {
+	if m.readOnly {
+		m.status = "read-only mode — editing is disabled"
+		return true
+	}
+	return false
+}
+
 // rebuild recomputes the visible tree rows after a structural or expansion
 // change. In the table view the tree rows aren't shown, so rebuilding is
 // deferred (marked stale) — this avoids materializing a huge row slice for a
@@ -214,17 +311,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		var next tea.Model
+		var cmd tea.Cmd
 		switch m.mode {
 		case modeInput:
-			return m.updateInput(msg)
+			next, cmd = m.updateInput(msg)
 		case modeChoice:
-			return m.updateChoice(msg)
+			next, cmd = m.updateChoice(msg)
 		default:
 			if m.view == viewTable {
-				return m.updateTable(msg)
+				next, cmd = m.updateTable(msg)
+			} else {
+				next, cmd = m.updateNormal(msg)
 			}
-			return m.updateNormal(msg)
 		}
+		// Recompute schema/diff overlays if the edit changed the tree.
+		if nm, ok := next.(Model); ok && nm.overlayStale {
+			nm.refreshOverlays()
+			next = nm
+		}
+		return next, cmd
 
 	default:
 		// Route timer/blink messages to the text input while it is active.
@@ -403,9 +509,22 @@ func (m *Model) activateCurrent() {
 		return
 	}
 	n := m.rows[m.cursor].Node
+	if n.IsContainer() {
+		m.toggleCurrent() // expand/collapse is a view change, allowed read-only
+		return
+	}
+	if m.readOnlyBlocked() {
+		return
+	}
+	// If the schema constrains this field to an enum, offer a pick-list instead
+	// of free-text entry (works for any current value type, including null).
+	if m.schema != nil {
+		if a, ok := m.schemaOverlay.At(m.rows[m.cursor].Path); ok && len(a.EnumValues) > 0 {
+			m.beginEnumPick(n, a)
+			return
+		}
+	}
 	switch {
-	case n.IsContainer():
-		m.toggleCurrent()
 	case n.Kind == document.KindBool:
 		m.pushUndo()
 		n.Bool = !n.Bool
@@ -462,10 +581,11 @@ func (m Model) View() string {
 	if end > len(m.rows) {
 		end = len(m.rows)
 	}
+	gutter := m.hasOverlay()
 	shown := 0
 	for i := m.offset; i < end; i++ {
 		r := m.rows[i]
-		b.WriteString(renderRow(m.theme, r, m.isExpanded(r.Path), i == m.cursor))
+		b.WriteString(renderRow(m.theme, r, m.isExpanded(r.Path), i == m.cursor, m.decorFor(r), gutter))
 		b.WriteByte('\n')
 		shown++
 	}
@@ -475,6 +595,29 @@ func (m Model) View() string {
 
 	b.WriteString(m.statusBar())
 	return b.String()
+}
+
+// hasOverlay reports whether a schema or diff overlay is active (and thus the
+// tree view should reserve a marker gutter).
+func (m Model) hasOverlay() bool { return m.schema != nil || m.hasDiff }
+
+// decorFor returns the overlay marker for a row. Schema validity takes
+// precedence over diff status when both are active.
+func (m Model) decorFor(r Row) rowDecor {
+	if m.schema != nil {
+		if a, ok := m.schemaOverlay.At(r.Path); ok && a.Invalid {
+			return rowDecor{marker: "✗", style: m.theme.Invalid}
+		}
+	}
+	if m.hasDiff {
+		switch m.diffResult.Kind(r.Path) {
+		case document.DiffAdded:
+			return rowDecor{marker: "+", style: m.theme.Added}
+		case document.DiffChanged:
+			return rowDecor{marker: "~", style: m.theme.Changed}
+		}
+	}
+	return rowDecor{}
 }
 
 func (m Model) titleBar() string {
@@ -490,7 +633,22 @@ func (m Model) titleBar() string {
 	if m.commentsDropped {
 		warn = "⚠ "
 	}
-	title := fmt.Sprintf(" nanoj — %s%s%s ", warn, mark, name)
+	badges := ""
+	if m.readOnly {
+		badges += " [read-only]"
+	}
+	if m.schema != nil {
+		if m.schemaOverlay.Valid {
+			badges += " [schema ✓]"
+		} else {
+			badges += " [schema ✗]"
+		}
+	}
+	if m.hasDiff {
+		d := m.diffResult
+		badges += fmt.Sprintf(" [diff +%d~%d-%d]", d.Added, d.Changed, d.Removed)
+	}
+	title := fmt.Sprintf(" nanoj — %s%s%s%s ", warn, mark, name, badges)
 	pos := ""
 	if m.view == viewTable {
 		pos = fmt.Sprintf(" r%d c%d ", m.tableRow+1, m.tableCol+1)
@@ -503,6 +661,49 @@ func (m Model) titleBar() string {
 		gap = 0
 	}
 	return bar.Render(pad(title+strings.Repeat(" ", gap)+pos, m.width))
+}
+
+// selectedInfo returns a one-line schema/diff description for the selected node,
+// shown in the status area when there is no transient message. Empty when no
+// overlay applies to the selection.
+func (m Model) selectedInfo() string {
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		return ""
+	}
+	path := m.rows[m.cursor].Path
+	var parts []string
+
+	if m.schema != nil {
+		if a, ok := m.schemaOverlay.At(path); ok {
+			if a.Invalid {
+				parts = append(parts, "✗ invalid")
+			}
+			if a.Required {
+				parts = append(parts, "required")
+			}
+			if a.ExpectedType != "" {
+				parts = append(parts, "type: "+a.ExpectedType)
+			}
+			if len(a.EnumValues) > 0 {
+				parts = append(parts, "enum: "+strings.Join(a.EnumDisplay(), ", "))
+			}
+			if len(a.MissingRequired) > 0 {
+				parts = append(parts, "missing required: "+strings.Join(a.MissingRequired, ", "))
+			}
+			if a.Description != "" {
+				parts = append(parts, a.Description)
+			}
+		}
+	}
+	if m.hasDiff {
+		switch m.diffResult.Kind(path) {
+		case document.DiffAdded:
+			parts = append(parts, "+ added vs "+m.diffName)
+		case document.DiffChanged:
+			parts = append(parts, "~ changed vs "+m.diffName)
+		}
+	}
+	return strings.Join(parts, "  •  ")
 }
 
 // statusBar renders the two bottom lines: a prompt when one is active,
@@ -524,9 +725,12 @@ func (m Model) statusBar() string {
 		return pad(" "+line1, m.width) + "\n" + pad(line2, m.width)
 	default:
 		var line1 string
-		if m.status != "" {
+		switch {
+		case m.status != "":
 			line1 = lipgloss.NewStyle().Reverse(true).Render(pad(" "+m.status, m.width))
-		} else {
+		case m.selectedInfo() != "":
+			line1 = lipgloss.NewStyle().Reverse(true).Render(pad(" "+m.selectedInfo(), m.width))
+		default:
 			line1 = pad(" "+strings.Join([]string{"^X Exit", "^O Write", "^W Search", "Enter Edit", "t Type"}, "    "), m.width)
 		}
 		line2 := pad(" "+strings.Join([]string{"a Add", "^K Cut", "M-6 Copy", "^U Paste", "M-U Undo", "^T Table"}, "    "), m.width)
