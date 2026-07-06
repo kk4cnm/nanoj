@@ -57,6 +57,13 @@ func (m *Model) enterTable() {
 // plain navigation, so moving the cursor stays O(viewport) on huge tables.
 func (m *Model) recomputeColWidths() {
 	m.tableColWidths = m.table.columnWidths()
+	// Reserve room in every column for a trailing overlay marker (" ✗" etc.) so
+	// marked and unmarked cells stay aligned.
+	if m.hasOverlay() {
+		for c := range m.tableColWidths {
+			m.tableColWidths[c] += 2
+		}
+	}
 	// Reserve room in the sorted column for the " ▲" / " ▼" header marker.
 	if m.sortCol >= 0 && m.sortCol < len(m.tableColWidths) {
 		m.tableColWidths[m.sortCol] += 2
@@ -184,6 +191,15 @@ func (m *Model) editCell() {
 	}
 	n := m.table.cellNode(m.tableRow, m.tableCol)
 
+	// If the schema constrains this cell to an enum, offer the pick-list, same
+	// as Enter does in the tree view.
+	if n != nil && !n.IsContainer() && m.schema != nil {
+		if a, ok := m.schemaOverlay.At(m.cellPath(m.tableRow, m.tableCol)); ok && len(a.EnumValues) > 0 {
+			m.beginEnumPick(n, a)
+			return
+		}
+	}
+
 	switch {
 	case n == nil:
 		// Empty cell: add the column's key to this row, type inferred on commit.
@@ -272,6 +288,9 @@ func (m Model) tableBodyHeight() int {
 }
 
 // renderTable renders the grid: title, header row, separator, data rows, help.
+// When a schema or diff overlay is active, a two-column marker gutter on the
+// left carries row-level annotations (e.g. an object missing a required key, a
+// row added vs the baseline) and each cell shows its own trailing marker.
 func (m Model) renderTable() string {
 	var b strings.Builder
 	b.WriteString(m.titleBar())
@@ -279,10 +298,14 @@ func (m Model) renderTable() string {
 
 	widths := m.tableColWidths
 	idxW := m.indexWidth()
+	gutter := m.hasOverlay()
 	start, end := visibleColumns(widths, idxW, m.width, m.tableColOff)
 
 	// Header.
 	var head strings.Builder
+	if gutter {
+		head.WriteString("  ")
+	}
 	head.WriteString(strings.Repeat(" ", idxW))
 	for c := start; c < end; c++ {
 		head.WriteString(tableColSep)
@@ -308,14 +331,18 @@ func (m Model) renderTable() string {
 	shown := 0
 	for r := m.tableRowOff; r < endRow; r++ {
 		var line strings.Builder
+		if gutter {
+			if d := m.decorAt(childPath(m.tablePath, r)); d.marker != "" {
+				line.WriteString(d.style.Render(d.marker))
+				line.WriteByte(' ')
+			} else {
+				line.WriteString("  ")
+			}
+		}
 		line.WriteString(m.theme.Structure.Render(fit(strconv.Itoa(r), idxW)))
 		for c := start; c < end; c++ {
 			line.WriteString(m.theme.Structure.Render(tableColSep))
-			cell := fit(cellText(m.table.cellNode(r, c)), widths[c])
-			if r == m.tableRow && c == m.tableCol {
-				cell = m.theme.Selection.Render(cell)
-			}
-			line.WriteString(cell)
+			line.WriteString(m.renderCell(r, c, widths[c]))
 		}
 		b.WriteString(clip(line.String(), m.width))
 		b.WriteByte('\n')
@@ -329,6 +356,43 @@ func (m Model) renderTable() string {
 	return b.String()
 }
 
+// renderCell renders one data cell. While an overlay is active, column widths
+// reserve two trailing columns for a marker, so an annotated cell (a schema ✗
+// or a diff +/~) shows its glyph without disturbing alignment.
+func (m Model) renderCell(r, c, width int) string {
+	n := m.table.cellNode(r, c)
+	selected := r == m.tableRow && c == m.tableCol
+	var d rowDecor
+	if n != nil && m.hasOverlay() {
+		d = m.decorAt(m.cellPath(r, c))
+	}
+	if d.marker == "" {
+		cell := fit(cellText(n), width)
+		if selected {
+			return m.theme.Selection.Render(cell)
+		}
+		return cell
+	}
+	body := fit(cellText(n), width-2)
+	if selected {
+		return m.theme.Selection.Render(body + " " + d.marker)
+	}
+	return body + " " + d.style.Render(d.marker)
+}
+
+// cellPath returns the structural path of the cell's value node, or "" when
+// the row's object does not contain the column's key.
+func (m Model) cellPath(row, col int) string {
+	obj := m.table.array.Items[row]
+	key := m.table.columns[col]
+	for i, mem := range obj.Members {
+		if mem.Key == key {
+			return childPath(childPath(m.tablePath, row), i)
+		}
+	}
+	return ""
+}
+
 func (m Model) tableStatusBar() string {
 	if m.mode == modeInput {
 		line1 := m.prompt + m.input.View()
@@ -340,6 +404,13 @@ func (m Model) tableStatusBar() string {
 	if m.status != "" {
 		line1 := lipgloss.NewStyle().Reverse(true).Render(pad(" "+m.status, m.width))
 		return line1 + "\n" + pad(" "+m.tablePosition(), m.width)
+	}
+	// With no transient message, show the selected cell's schema/diff info.
+	if path := m.cellPath(m.tableRow, m.tableCol); path != "" {
+		if info := m.overlayInfo(path); info != "" {
+			line1 := lipgloss.NewStyle().Reverse(true).Render(pad(" "+info, m.width))
+			return line1 + "\n" + pad(" "+m.tablePosition(), m.width)
+		}
 	}
 	line1 := pad(" "+strings.Join([]string{"^T Tree view", "Enter Edit cell", "s Sort col", "^W Search", "^X Exit"}, "    "), m.width)
 	help := " " + strings.Join([]string{"↑↓←→ Move", "^K Cut", "M-6 Copy", "^U Paste row"}, "    ")

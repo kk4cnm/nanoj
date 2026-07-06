@@ -29,13 +29,20 @@ non-invasive.
   `santhosh-tekuri/jsonschema`: invalid values marked (`✗`), required and
   missing-required fields, expected type + `description` in the status line,
   `enum` pick-lists (reusing `modeChoice`), and `$ref`/`$defs` resolved by
-  walking the compiled schema. Still future: surfacing `allOf`/`anyOf`/`oneOf`
-  per-field, and table-view cell markers (overlays currently force the tree
-  view, which is where markers render).
+  walking the compiled schema. Combinators are surfaced per-field where
+  unambiguous: `allOf` branches are flattened into the working set (their
+  properties/required/types/descriptions all apply), while `anyOf`/`oneOf`
+  contribute alternative types and merged enums for display only — we never
+  descend into their properties, since which branch applies depends on the data.
 - **JSON diff** (`--diff baseline.json working.json`) — path-keyed structural
   overlay: `+`/`~` markers inline and a `[diff +A~C-R]` summary; objects by key,
   arrays positional. Removed nodes have no working-tree path, so they surface as
   the `-R` count rather than inline rows.
+- **Overlay markers in the table view** — schema and diff render in both views:
+  each table column reserves two trailing cells for a marker, a left gutter
+  carries row-level annotations (missing required key, added row), Enter on an
+  enum-constrained cell opens the pick-list, and the status line shows the
+  selected cell's schema/diff info.
 - **Read-only mode** (`--view`) — gates every edit and save; `[read-only]` badge;
   navigation/search/expand still work. Composes with `--schema` and `--diff`.
 

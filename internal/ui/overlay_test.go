@@ -110,13 +110,43 @@ func TestSchemaValidBadge(t *testing.T) {
 	}
 }
 
-func TestSchemaForcesTreeView(t *testing.T) {
-	// An array of objects would normally auto-open as a table; a schema overlay
-	// switches it to the tree so the markers are visible.
-	c := loadChecker(t, `{"type":"array","items":{"type":"object"}}`)
-	m := New(parse(t, `[{"a":1},{"a":2}]`), "x.json").WithSchema(c)
-	if m.view != viewTree {
-		t.Errorf("schema overlay should force the tree view, got view=%d", m.view)
+func TestSchemaMarksTableCells(t *testing.T) {
+	// An array of objects auto-opens as a table; the overlay renders there.
+	c := loadChecker(t, `{"type":"array","items":{"type":"object","properties":{"a":{"type":"number"}}}}`)
+	m := New(parse(t, `[{"a":1},{"a":"x"}]`), "x.json").WithSchema(c)
+	if m.view != viewTable {
+		t.Fatalf("array of objects should stay in the table view, got view=%d", m.view)
+	}
+	m = sized(m, 80, 24)
+
+	if p := m.cellPath(1, 0); p != "/1/0" {
+		t.Errorf("cellPath(1,0)=%q, want /1/0", p)
+	}
+	if d := m.decorAt("/1/0"); d.marker != "✗" {
+		t.Errorf("invalid cell should carry ✗, got %q", d.marker)
+	}
+	if view := m.View(); !strings.Contains(view, "✗") {
+		t.Errorf("table render should include the invalid marker:\n%s", view)
+	}
+	if !strings.Contains(m.titleBar(), "[schema ✗]") {
+		t.Errorf("title should show schema invalid badge, got %q", m.titleBar())
+	}
+}
+
+func TestTableEnumPick(t *testing.T) {
+	c := loadChecker(t, `{"type":"array","items":{"type":"object","properties":{"level":{"enum":["low","high"]}}}}`)
+	m := New(parse(t, `[{"level":"low"}]`), "x.json").WithSchema(c)
+	if m.view != viewTable {
+		t.Fatalf("expected table view, got view=%d", m.view)
+	}
+	m = sized(m, 80, 24)
+	m = sendKey(m, "enter") // edit cell (0,0), which is enum-constrained
+	if m.mode != modeChoice || m.action != actEnumPick {
+		t.Fatalf("enter on an enum cell should open the enum picker, mode=%d action=%d", m.mode, m.action)
+	}
+	m = sendKey(m, "2") // pick "high"
+	if got := m.root.Items[0].Members[0].Value.Str; got != "high" {
+		t.Errorf("enum pick should set cell to high, got %q", got)
 	}
 }
 
@@ -180,6 +210,27 @@ func TestDiffMarksAddedAndChanged(t *testing.T) {
 	}
 	if !strings.Contains(m.titleBar(), "[diff +1~1-0]") {
 		t.Errorf("title should summarize the diff, got %q", m.titleBar())
+	}
+}
+
+func TestDiffMarksTableCellsAndRows(t *testing.T) {
+	baseline := parse(t, `[{"a": 1}]`)
+	m := New(parse(t, `[{"a": 2}, {"a": 3}]`), "x.json").WithDiff(baseline, "base.json")
+	if m.view != viewTable {
+		t.Fatalf("expected table view, got view=%d", m.view)
+	}
+	m = sized(m, 80, 24)
+
+	// Row 0's cell changed; row 1 (and its cell) was added.
+	if d := m.decorAt(m.cellPath(0, 0)); d.marker != "~" {
+		t.Errorf("changed cell should carry ~, got %q", d.marker)
+	}
+	if d := m.decorAt("/1"); d.marker != "+" {
+		t.Errorf("added row should carry + in the gutter, got %q", d.marker)
+	}
+	view := m.View()
+	if !strings.Contains(view, "~") || !strings.Contains(view, "+") {
+		t.Errorf("table render should include the diff markers:\n%s", view)
 	}
 }
 

@@ -191,25 +191,31 @@ func (m Model) WithCommentWarning() Model {
 }
 
 // WithSchema attaches a compiled JSON Schema as a read-only overlay and
-// computes the initial annotation. Overlays render in the tree view, so a
-// document that would auto-open as a table is switched to the tree.
+// computes the initial annotation. Markers render in both views; when the
+// document opened straight into the table, its column widths are recomputed to
+// reserve marker space.
 func (m Model) WithSchema(c *schema.Checker) Model {
 	m.schema = c
 	m.schemaOverlay = c.Annotate(m.root)
 	m.status = m.schemaOverlay.Summary
-	m.forceTreeView()
+	if m.view == viewTable {
+		m.recomputeColWidths()
+	}
 	return m
 }
 
 // WithDiff attaches a baseline document to compare against, as a read-only
-// overlay. name is shown in the title. Like schema, it renders in the tree view.
+// overlay. name is shown in the title. Like schema, markers render in both
+// views.
 func (m Model) WithDiff(baseline *document.Node, name string) Model {
 	m.diffBaseline = baseline
 	m.diffName = name
 	m.hasDiff = true
 	m.diffResult = document.Diff(baseline, m.root)
 	m.status = m.diffSummary()
-	m.forceTreeView()
+	if m.view == viewTable {
+		m.recomputeColWidths()
+	}
 	return m
 }
 
@@ -218,15 +224,6 @@ func (m Model) WithDiff(baseline *document.Node, name string) Model {
 func (m Model) ReadOnly() Model {
 	m.readOnly = true
 	return m
-}
-
-// forceTreeView switches an auto-opened table back to the tree so overlay
-// markers (which are a tree-view decoration) are visible from the start.
-func (m *Model) forceTreeView() {
-	if m.view == viewTable {
-		m.view = viewTree
-		m.rebuild()
-	}
 }
 
 // refreshOverlays recomputes the schema and diff overlays when the tree has
@@ -598,19 +595,19 @@ func (m Model) View() string {
 }
 
 // hasOverlay reports whether a schema or diff overlay is active (and thus the
-// tree view should reserve a marker gutter).
+// views should reserve marker space).
 func (m Model) hasOverlay() bool { return m.schema != nil || m.hasDiff }
 
-// decorFor returns the overlay marker for a row. Schema validity takes
-// precedence over diff status when both are active.
-func (m Model) decorFor(r Row) rowDecor {
+// decorAt returns the overlay marker for the node at the given structural
+// path. Schema validity takes precedence over diff status when both are active.
+func (m Model) decorAt(path string) rowDecor {
 	if m.schema != nil {
-		if a, ok := m.schemaOverlay.At(r.Path); ok && a.Invalid {
+		if a, ok := m.schemaOverlay.At(path); ok && a.Invalid {
 			return rowDecor{marker: "✗", style: m.theme.Invalid}
 		}
 	}
 	if m.hasDiff {
-		switch m.diffResult.Kind(r.Path) {
+		switch m.diffResult.Kind(path) {
 		case document.DiffAdded:
 			return rowDecor{marker: "+", style: m.theme.Added}
 		case document.DiffChanged:
@@ -619,6 +616,9 @@ func (m Model) decorFor(r Row) rowDecor {
 	}
 	return rowDecor{}
 }
+
+// decorFor returns the overlay marker for a tree row.
+func (m Model) decorFor(r Row) rowDecor { return m.decorAt(r.Path) }
 
 func (m Model) titleBar() string {
 	name := m.path
@@ -663,14 +663,18 @@ func (m Model) titleBar() string {
 	return bar.Render(pad(title+strings.Repeat(" ", gap)+pos, m.width))
 }
 
-// selectedInfo returns a one-line schema/diff description for the selected node,
-// shown in the status area when there is no transient message. Empty when no
-// overlay applies to the selection.
+// selectedInfo returns a one-line schema/diff description for the selected
+// tree row, shown in the status area when there is no transient message.
 func (m Model) selectedInfo() string {
 	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
 		return ""
 	}
-	path := m.rows[m.cursor].Path
+	return m.overlayInfo(m.rows[m.cursor].Path)
+}
+
+// overlayInfo returns a one-line schema/diff description for the node at the
+// given structural path. Empty when no overlay applies there.
+func (m Model) overlayInfo(path string) string {
 	var parts []string
 
 	if m.schema != nil {

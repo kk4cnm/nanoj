@@ -8,10 +8,14 @@
 //
 // Validation leans entirely on santhosh-tekuri/jsonschema (draft 2020-12 and
 // earlier). Our own logic is limited to walking the *compiled* schema in
-// parallel with the document to find the subschema that applies to each node —
-// which the library has already resolved $ref for us, so we follow Schema.Ref
-// but otherwise keep this deliberately small (allOf/anyOf/oneOf combinators are
-// not deeply resolved here).
+// parallel with the document to find the subschemas that apply to each node —
+// the library has already resolved $ref, so we follow Schema.Ref. Combinators
+// are handled to the extent that is unambiguous: allOf branches all apply, so
+// they are flattened into the working set (properties, required, descriptions
+// and types are drawn from every branch); anyOf/oneOf branches describe
+// alternatives, so they contribute display information only (the alternative
+// types, and enum values merged across branches) — we never descend into their
+// properties, because which branch applies depends on the data.
 package schema
 
 import (
@@ -113,29 +117,40 @@ func (c *Checker) Annotate(root *document.Node) Overlay {
 		}
 	}
 
-	walk(root, "", resolve(c.sch), "", false, invalid, o.byPath)
+	walk(root, "", expand(c.sch, nil), "", false, invalid, o.byPath)
 	o.Summary = summarize(c.name, o.Valid, len(invalid))
 	return o
 }
 
-// walk descends the document and the (already $ref-resolved) schema together,
-// recording an annotation for each node. keyPath is the JSON-pointer-style key
-// path used to match validation locations; idxPath is the index-based path used
-// as the overlay key. required is set when the parent object lists this node's
-// key in its "required".
-func walk(n *document.Node, idxPath string, sch *jsonschema.Schema, keyPath string, required bool, invalid map[string]bool, out map[string]Annotation) {
+// walk descends the document and the applicable schemas together, recording an
+// annotation for each node. schemas is the expanded set that unconditionally
+// applies to n (the subschema plus its flattened allOf branches). keyPath is
+// the JSON-pointer-style key path used to match validation locations; idxPath
+// is the index-based path used as the overlay key. required is set when the
+// parent object lists this node's key in its "required".
+func walk(n *document.Node, idxPath string, schemas []*jsonschema.Schema, keyPath string, required bool, invalid map[string]bool, out map[string]Annotation) {
 	a := Annotation{Required: required}
 	if invalid[keyPath] {
 		a.Invalid = true
 	}
-	if sch != nil {
-		if sch.Types != nil {
-			a.ExpectedType = strings.Join(sch.Types.ToStrings(), " or ")
+	for _, s := range schemas {
+		if a.ExpectedType == "" && s.Types != nil {
+			a.ExpectedType = strings.Join(s.Types.ToStrings(), " or ")
 		}
-		a.Description = sch.Description
-		if sch.Enum != nil {
-			a.EnumValues = sch.Enum.Values
+		if a.Description == "" {
+			a.Description = s.Description
 		}
+		if a.EnumValues == nil && s.Enum != nil {
+			a.EnumValues = s.Enum.Values
+		}
+	}
+	// If the schemas that directly apply don't pin these down, fall back to the
+	// anyOf/oneOf alternatives.
+	if a.ExpectedType == "" {
+		a.ExpectedType = alternativeTypes(schemas)
+	}
+	if a.EnumValues == nil {
+		a.EnumValues = alternativeEnums(schemas)
 	}
 
 	switch n.Kind {
@@ -145,68 +160,137 @@ func walk(n *document.Node, idxPath string, sch *jsonschema.Schema, keyPath stri
 		for _, m := range n.Members {
 			present[m.Key] = true
 		}
-		if sch != nil {
-			for _, req := range sch.Required {
-				reqSet[req] = true
-				if !present[req] {
+		for _, s := range schemas {
+			for _, req := range s.Required {
+				if !reqSet[req] && !present[req] {
 					a.MissingRequired = append(a.MissingRequired, req)
 				}
+				reqSet[req] = true
 			}
 		}
 		for i, m := range n.Members {
-			childSch := propertySchema(sch, m.Key)
 			cp := childKeyPath(keyPath, m.Key)
-			walk(m.Value, childIdx(idxPath, i), resolve(childSch), cp, reqSet[m.Key], invalid, out)
+			walk(m.Value, childIdx(idxPath, i), propertySchemas(schemas, m.Key), cp, reqSet[m.Key], invalid, out)
 		}
 	case document.KindArray:
 		for i, item := range n.Items {
-			childSch := itemSchema(sch, i)
 			cp := childKeyPath(keyPath, strconv.Itoa(i))
-			walk(item, childIdx(idxPath, i), resolve(childSch), cp, false, invalid, out)
+			walk(item, childIdx(idxPath, i), itemSchemas(schemas, i), cp, false, invalid, out)
 		}
 	}
 
 	out[idxPath] = a
 }
 
-// propertySchema returns the subschema for object key k, or nil.
-func propertySchema(parent *jsonschema.Schema, k string) *jsonschema.Schema {
-	if parent == nil {
-		return nil
+// maxExpand bounds the expanded schema set as a guard against reference cycles
+// and pathological allOf nesting.
+const maxExpand = 100
+
+// expand appends to out the subschemas that all unconditionally apply to the
+// same instance: s itself plus every allOf branch, recursively, with $ref
+// resolved along the way.
+func expand(s *jsonschema.Schema, out []*jsonschema.Schema) []*jsonschema.Schema {
+	s = resolve(s)
+	if s == nil || len(out) >= maxExpand {
+		return out
 	}
-	if parent.Properties != nil {
-		if s, ok := parent.Properties[k]; ok {
-			return s
-		}
+	out = append(out, s)
+	for _, b := range s.AllOf {
+		out = expand(b, out)
 	}
-	if s, ok := parent.AdditionalProperties.(*jsonschema.Schema); ok {
-		return s
-	}
-	return nil
+	return out
 }
 
-// itemSchema returns the subschema for array index i, handling both the
-// draft 2020-12 shape (PrefixItems + Items2020) and the older Items form
-// (*Schema for all items, or []*Schema for tuples).
-func itemSchema(parent *jsonschema.Schema, i int) *jsonschema.Schema {
-	if parent == nil {
-		return nil
-	}
-	if i < len(parent.PrefixItems) {
-		return parent.PrefixItems[i]
-	}
-	if parent.Items2020 != nil {
-		return parent.Items2020
-	}
-	switch it := parent.Items.(type) {
-	case *jsonschema.Schema:
-		return it
-	case []*jsonschema.Schema:
-		if i < len(it) {
-			return it[i]
+// alternativeTypes returns a display string for the types allowed by the
+// anyOf/oneOf branches of the given schemas, e.g. "string or number".
+func alternativeTypes(schemas []*jsonschema.Schema) string {
+	var types []string
+	seen := map[string]bool{}
+	for _, s := range schemas {
+		for _, b := range append(append([]*jsonschema.Schema{}, s.AnyOf...), s.OneOf...) {
+			for _, alt := range expand(b, nil) {
+				if alt.Types == nil {
+					continue
+				}
+				for _, t := range alt.Types.ToStrings() {
+					if !seen[t] {
+						seen[t] = true
+						types = append(types, t)
+					}
+				}
+			}
 		}
 	}
-	return nil
+	return strings.Join(types, " or ")
+}
+
+// alternativeEnums merges the enum values found across anyOf/oneOf branches of
+// the given schemas, deduplicated, in branch order. This makes the enum
+// pick-list work for the common `oneOf: [{enum: [...]}, ...]` shape.
+func alternativeEnums(schemas []*jsonschema.Schema) []any {
+	var values []any
+	seen := map[string]bool{}
+	for _, s := range schemas {
+		for _, b := range append(append([]*jsonschema.Schema{}, s.AnyOf...), s.OneOf...) {
+			for _, alt := range expand(b, nil) {
+				if alt.Enum == nil {
+					continue
+				}
+				for _, v := range alt.Enum.Values {
+					if key := displayValue(v); !seen[key] {
+						seen[key] = true
+						values = append(values, v)
+					}
+				}
+			}
+		}
+	}
+	return values
+}
+
+// propertySchemas returns the expanded set of subschemas that apply to object
+// key k across every schema in the parent set.
+func propertySchemas(parents []*jsonschema.Schema, k string) []*jsonschema.Schema {
+	var out []*jsonschema.Schema
+	for _, p := range parents {
+		if p.Properties != nil {
+			if s, ok := p.Properties[k]; ok {
+				out = expand(s, out)
+				continue
+			}
+		}
+		if s, ok := p.AdditionalProperties.(*jsonschema.Schema); ok {
+			out = expand(s, out)
+		}
+	}
+	return out
+}
+
+// itemSchemas returns the expanded set of subschemas that apply to array index
+// i across every schema in the parent set, handling both the draft 2020-12
+// shape (PrefixItems + Items2020) and the older Items form (*Schema for all
+// items, or []*Schema for tuples).
+func itemSchemas(parents []*jsonschema.Schema, i int) []*jsonschema.Schema {
+	var out []*jsonschema.Schema
+	for _, p := range parents {
+		if i < len(p.PrefixItems) {
+			out = expand(p.PrefixItems[i], out)
+			continue
+		}
+		if p.Items2020 != nil {
+			out = expand(p.Items2020, out)
+			continue
+		}
+		switch it := p.Items.(type) {
+		case *jsonschema.Schema:
+			out = expand(it, out)
+		case []*jsonschema.Schema:
+			if i < len(it) {
+				out = expand(it[i], out)
+			}
+		}
+	}
+	return out
 }
 
 // resolve follows a chain of $ref links to the schema that actually applies,

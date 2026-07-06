@@ -115,17 +115,22 @@ nanoj --schema config.schema.json config.json
   line, so the schema doubles as inline documentation.
 - When a field is constrained to an **enum**, pressing `Enter` offers the
   allowed values as a numbered pick-list instead of free-text entry.
+- In the **table view**, annotated cells show their marker inline and the row
+  gutter carries row-level problems (like a missing required key).
 
 It's a read-only overlay: the schema is never written back, and validation
 re-runs as you edit so the markers stay live. `$ref` (including `$defs`) is
-resolved; the deeper combinators (`allOf`/`anyOf`/`oneOf`) are matched by the
-validator but not yet surfaced per-field. A schema that fails to compile is
-reported and skipped so it never blocks editing.
+resolved, and the combinators are surfaced per-field where that's unambiguous:
+`allOf` branches all apply, so their properties, required keys, types, and
+descriptions are merged; `anyOf`/`oneOf` branches contribute the alternative
+types (e.g. `string or integer`) and their enum values merged into one
+pick-list. A schema that fails to compile is reported and skipped so it never
+blocks editing.
 
 ## Diff overlay
 
 Compare a document against a baseline and see a structured, path-aware diff
-right in the tree:
+right in the tree or table:
 
 ```sh
 nanoj --diff baseline.json working.json   # opens working.json, compared to baseline.json

@@ -137,6 +137,101 @@ func TestRefResolution(t *testing.T) {
 	}
 }
 
+func TestAllOfMergesBranches(t *testing.T) {
+	// A base schema extended via allOf: properties, required and descriptions
+	// from every branch should all be visible.
+	c := load(t, `{
+		"allOf": [
+			{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+			{"properties": {"port": {"type": "integer", "description": "listen port"}}, "required": ["port"]}
+		]
+	}`)
+	o := c.Annotate(parse(t, `{"name": "Ada"}`))
+
+	// name comes from the first branch and is required there.
+	if a, _ := o.At("/0"); !a.Required || a.ExpectedType != "string" {
+		t.Errorf("name annotation=%+v", a)
+	}
+	// port is required by the second branch and absent.
+	root, _ := o.At("")
+	found := false
+	for _, k := range root.MissingRequired {
+		if k == "port" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected port in MissingRequired, got %+v", root.MissingRequired)
+	}
+	if root.ExpectedType != "object" {
+		t.Errorf("root type=%q", root.ExpectedType)
+	}
+}
+
+func TestAllOfSameProperty(t *testing.T) {
+	// Two allOf branches constrain the same property: one supplies the type,
+	// the other the description. Both should surface.
+	c := load(t, `{
+		"allOf": [
+			{"type": "object", "properties": {"port": {"type": "integer"}}},
+			{"properties": {"port": {"description": "listen port"}}}
+		]
+	}`)
+	o := c.Annotate(parse(t, `{"port": 8080}`))
+	a, _ := o.At("/0")
+	if a.ExpectedType != "integer" || a.Description != "listen port" {
+		t.Errorf("merged annotation=%+v", a)
+	}
+}
+
+func TestAnyOfAlternativeTypes(t *testing.T) {
+	c := load(t, `{
+		"type": "object",
+		"properties": {"id": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}
+	}`)
+	o := c.Annotate(parse(t, `{"id": 7}`))
+	a, _ := o.At("/0")
+	if a.ExpectedType != "string or integer" {
+		t.Errorf("expectedType=%q", a.ExpectedType)
+	}
+}
+
+func TestOneOfMergedEnums(t *testing.T) {
+	c := load(t, `{
+		"type": "object",
+		"properties": {"level": {"oneOf": [{"enum": ["low", "high"]}, {"enum": ["high", "off"]}]}}
+	}`)
+	o := c.Annotate(parse(t, `{"level": "low"}`))
+	a, _ := o.At("/0")
+	disp := a.EnumDisplay()
+	if len(disp) != 3 || disp[0] != "low" || disp[1] != "high" || disp[2] != "off" {
+		t.Errorf("merged enum display=%v", disp)
+	}
+}
+
+func TestAllOfWithRef(t *testing.T) {
+	// allOf branch is a $ref — the common "extend a base definition" shape.
+	c := load(t, `{
+		"type": "object",
+		"properties": {"user": {
+			"allOf": [{"$ref": "#/$defs/person"}, {"properties": {"role": {"type": "string"}}}]
+		}},
+		"$defs": {"person": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}
+	}`)
+	o := c.Annotate(parse(t, `{"user": {"name": "Ada", "role": "admin"}}`))
+	if !o.Valid {
+		t.Fatalf("expected valid, summary=%q", o.Summary)
+	}
+	// user.name resolves through the ref'd branch and is required there.
+	if a, _ := o.At("/0/0"); !a.Required || a.ExpectedType != "string" {
+		t.Errorf("user.name annotation=%+v", a)
+	}
+	// user.role comes from the inline branch.
+	if a, _ := o.At("/0/1"); a.ExpectedType != "string" {
+		t.Errorf("user.role annotation=%+v", a)
+	}
+}
+
 func TestArrayItems(t *testing.T) {
 	c := load(t, `{
 		"type": "array",
