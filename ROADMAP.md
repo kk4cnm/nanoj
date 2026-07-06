@@ -45,22 +45,29 @@ non-invasive.
   selected cell's schema/diff info.
 - **Read-only mode** (`--view`) — gates every edit and save; `[read-only]` badge;
   navigation/search/expand still work. Composes with `--schema` and `--diff`.
+- **YAML / TOML import** (`--from yaml|toml`) — scoped as explicit one-way
+  **conversion**, per the direction below: `internal/convert` decodes into the
+  same six-type tree (key order preserved via `yaml.Node` / TOML metadata, big
+  ints intact, anchors expanded, datetimes → RFC 3339 strings, `inf`/`nan`
+  rejected at load), and the editor opens a **JSON working copy** (`config.yaml`
+  → buffer at `config.json`, `[from yaml]` badge). The source file is never
+  written back, so the valid-by-construction JSON promise is untouched.
 
-The last three share the **read-only path overlay** pattern (below): they
-annotate nodes by structural path during render and never mutate the tree.
+Schema, diff and read-only share the **read-only path overlay** pattern (below):
+they annotate nodes by structural path during render and never mutate the tree.
 
-## Planned (priority order)
+## Planned
 
-### 5. YAML / TOML interop (deferred, scoped as conversion)
-High adoption potential but the only item that touches nanoj's identity. Reading
-is easy (`yaml.v3` / `BurntSushi/toml` → the same tree); the hard question is
-what to *write*. The valid-by-construction promise is a JSON promise, and YAML
-round-tripping (comments, anchors, tags) is lossy.
+Nothing scheduled — the original roadmap is fully shipped. Known candidates,
+none committed:
 
-**Direction if/when we do it:** treat it as explicit **conversion**, not magic —
-e.g. `nanoj --from yaml config.yaml` opens a JSON working copy, and export is a
-deliberate, clearly-labeled choice. Keep it out of the core editing path so the
-value proposition stays crisp.
+- **YAML/TOML export** — the write half of interop. If ever done it must be a
+  deliberate, clearly-labeled action *outside* the editing path (the only save
+  path stays the strict JSON serializer); e.g. a separate convert-and-exit mode
+  rather than a save target.
+- **Schema `allOf`/`anyOf`/`oneOf` branch pinning** — per-field combinators are
+  surfaced (see above), but we don't report *which* `oneOf` branch matched the
+  current data.
 
 ## Non-goals (for now)
 - Full JSON5 input (single-quoted strings, unquoted keys). The available Go

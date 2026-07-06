@@ -221,6 +221,9 @@ func (m *Model) commitInput() tea.Cmd {
 		if m.commentsDropped {
 			m.status += " (without comments)"
 		}
+		if m.convertedFrom != "" {
+			m.status += " (as JSON — the " + m.convertedFrom + " source is untouched)"
+		}
 
 	case actSearch:
 		query := val

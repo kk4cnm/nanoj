@@ -12,6 +12,7 @@
 //
 //	--config <path>   use a specific config file
 //	--write-config    write an example config to the default location and exit
+//	--from <format>   convert yaml/toml input into a JSON working copy
 //
 // Configuration (theme, colors, default view, indent) lives in a JSON file; see
 // `nanoj --write-config`. The NO_COLOR environment variable is honored.
@@ -21,9 +22,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kk4cnm/nanoj/internal/config"
+	"github.com/kk4cnm/nanoj/internal/convert"
 	"github.com/kk4cnm/nanoj/internal/document"
 	"github.com/kk4cnm/nanoj/internal/schema"
 	"github.com/kk4cnm/nanoj/internal/ui"
@@ -36,6 +39,7 @@ func main() {
 	schemaPath := flag.String("schema", "", "validate against a JSON Schema and show a read-only overlay (invalid values, required fields, enums, descriptions)")
 	diffPath := flag.String("diff", "", "compare against a baseline JSON file and show a read-only diff overlay")
 	readOnly := flag.Bool("view", false, "read-only mode: browse and search without any chance of editing or saving")
+	fromFormat := flag.String("from", "", "convert the input from another format (yaml or toml) and open it as a JSON working copy; saving writes JSON and never touches the source file")
 	flag.Parse()
 
 	if *writeConfig {
@@ -71,20 +75,43 @@ func main() {
 		doc             *document.Node
 		commentsDropped bool
 	)
-	if *lenient {
-		doc, commentsDropped, err = document.ParseLenient(f)
-	} else {
-		doc, err = document.Parse(f)
+	switch *fromFormat {
+	case "":
+		if *lenient {
+			doc, commentsDropped, err = document.ParseLenient(f)
+		} else {
+			doc, err = document.Parse(f)
+		}
+		if err != nil {
+			err = fmt.Errorf("%s is not valid JSON: %w", path, err)
+		}
+	case "yaml", "yml":
+		doc, err = convert.FromYAML(f)
+	case "toml":
+		doc, err = convert.FromTOML(f)
+	default:
+		fmt.Fprintf(os.Stderr, "nanoj: --from must be yaml or toml (got %q)\n", *fromFormat)
+		os.Exit(2)
 	}
 	f.Close()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nanoj: %s is not valid JSON: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "nanoj: %v\n", err)
 		os.Exit(1)
 	}
 
-	model := ui.NewWithConfig(doc, path, cfg)
+	// A converted document is a working copy: the buffer points at a .json path
+	// beside the source, and the source file itself is never written.
+	workPath := path
+	if *fromFormat != "" {
+		workPath = jsonWorkPath(path)
+	}
+
+	model := ui.NewWithConfig(doc, workPath, cfg)
 	if commentsDropped {
 		model = model.WithCommentWarning()
+	}
+	if *fromFormat != "" {
+		model = model.WithConversionNote(*fromFormat)
 	}
 
 	// A broken schema or missing baseline shouldn't stop the user from editing:
@@ -123,6 +150,16 @@ func loadJSON(path string) (*document.Node, error) {
 	}
 	defer f.Close()
 	return document.Parse(f)
+}
+
+// jsonWorkPath derives the JSON working-copy path for a converted file:
+// the source path with its extension replaced by .json.
+func jsonWorkPath(path string) string {
+	base := baseName(path)
+	if i := strings.LastIndexByte(base, '.'); i > 0 {
+		return path[:len(path)-len(base)+i] + ".json"
+	}
+	return path + ".json"
 }
 
 // baseName returns the final path element, for compact display in the title.

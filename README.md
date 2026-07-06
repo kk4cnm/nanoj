@@ -35,6 +35,7 @@ go build -o nanoj .
 ./nanoj --schema schema.json config.json    # validate against a JSON Schema
 ./nanoj --diff old.json new.json             # show a structural diff overlay
 ./nanoj --view data.json                     # read-only: browse without editing
+./nanoj --from yaml config.yaml              # convert YAML (or toml) to a JSON working copy
 ```
 
 ### Reading JSONC (comments and trailing commas)
@@ -156,6 +157,25 @@ key and save is disabled and the title shows `[read-only]`. Handy for
 inspecting a file (optionally alongside `--schema` or `--diff`) when you only
 want to look. Note this is a safety/intent mode — it doesn't meaningfully change
 memory use, since undo snapshots are only ever created by edits.
+
+## Opening YAML and TOML (conversion)
+
+```sh
+nanoj --from yaml config.yaml    # or: --from toml config.toml
+```
+
+This is an explicit, one-way **conversion**, not round-trip editing. nanoj
+decodes the file into the same JSON tree (key order preserved, big integers
+intact, YAML anchors expanded) and opens it as a **JSON working copy** —
+the buffer points at `config.json` and `^O` writes JSON there. The YAML/TOML
+source file is never written back, and the title shows a `[from yaml]` badge
+so the mode is never a surprise.
+
+What doesn't survive, by design: comments, anchors/aliases (they're expanded),
+and custom tags. Datetimes become RFC 3339 strings. Values JSON genuinely
+cannot represent (`inf`, `nan`) are a load-time error rather than a silent
+mangling. The valid-by-construction promise is a JSON promise — keeping export
+out of the editing path is what keeps it honest.
 
 ## Configuration
 

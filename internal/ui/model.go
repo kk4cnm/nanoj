@@ -79,7 +79,8 @@ type Model struct {
 	status          string // transient message shown in the help area
 	dirty           bool   // unsaved changes
 	quitting        bool
-	commentsDropped bool // loaded leniently; comments were removed (warn the user)
+	commentsDropped bool   // loaded leniently; comments were removed (warn the user)
+	convertedFrom   string // source format when opened via --from ("yaml"/"toml")
 
 	undoStack  []snapshot
 	redoStack  []snapshot
@@ -187,6 +188,15 @@ func NewWithConfig(root *document.Node, path string, cfg config.Config) Model {
 func (m Model) WithCommentWarning() Model {
 	m.commentsDropped = true
 	m.status = "comments were removed on load — saving writes strict JSON"
+	return m
+}
+
+// WithConversionNote marks the model as a working copy converted from another
+// format (yaml/toml), so the title carries a warning and the user is reminded
+// that saving writes JSON — the source file is never written back.
+func (m Model) WithConversionNote(format string) Model {
+	m.convertedFrom = format
+	m.status = "converted from " + strings.ToUpper(format) + " — saving writes a JSON copy, the source file is untouched"
 	return m
 }
 
@@ -634,6 +644,9 @@ func (m Model) titleBar() string {
 		warn = "⚠ "
 	}
 	badges := ""
+	if m.convertedFrom != "" {
+		badges += " [from " + m.convertedFrom + "]"
+	}
 	if m.readOnly {
 		badges += " [read-only]"
 	}

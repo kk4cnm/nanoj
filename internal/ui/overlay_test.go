@@ -80,6 +80,19 @@ func TestReadOnlyTitleBadge(t *testing.T) {
 	}
 }
 
+// --- conversion note (--from) ---
+
+func TestConversionNoteBadgeAndSaveStatus(t *testing.T) {
+	m := New(parse(t, `{"a": 1}`), "config.json").WithConversionNote("yaml")
+	m = sized(m, 80, 24)
+	if !strings.Contains(m.titleBar(), "[from yaml]") {
+		t.Errorf("title should show the conversion badge, got %q", m.titleBar())
+	}
+	if !strings.Contains(m.status, "YAML") {
+		t.Errorf("expected a conversion status message, got %q", m.status)
+	}
+}
+
 // --- schema overlay ---
 
 func TestSchemaMarksInvalidRow(t *testing.T) {
